@@ -61,7 +61,7 @@ curl -X POST https://tapauth.ai/api/v1/grants \
 
 # 2. User clicks the approve_url
 # 3. Retrieve the token
-curl https://tapauth.ai/api/v1/token/{grant_id} \
+curl https://tapauth.ai/api/v1/grants/{grant_id} \
   -H "Authorization: Bearer gs_..."
 ```
 
