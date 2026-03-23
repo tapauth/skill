@@ -42,16 +42,37 @@ The `$(...)` command substitution captures stdout (the token) while the approval
 - **Always use the bundled script.** The script is at `scripts/tapauth.sh` inside this skill. Do NOT download it from the website — you already have it.
 - **Approval URL goes to stderr, token goes to stdout.** The `$(scripts/tapauth.sh ...)` pattern works because the token is on stdout and the approval URL is on stderr. Don't redirect stderr to stdout or the token will be corrupted.
 - **Surface the approval URL to the user.** The script prints it to stderr. The user must click the link, sign in with their account, and approve. Nothing happens until they do.
-- **Scopes are provider-specific.** Check `references/<provider>.md` for valid scopes. Google uses URL-style scopes (`calendar.readonly`), GitHub uses words (`repo`), others vary.
+- **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check `references/<provider>.md` for valid scope values.
 - **Tokens are cached automatically.** After the first approval, subsequent runs return the cached token instantly. Don't create new grants when you already have a cached token.
 - **Use focused Google providers when possible.** `google_sheets` or `google_docs` give simpler consent screens than `google` with full scopes.
+
+## Quick Reference — Provider + Scopes
+
+Some providers require scopes, others don't. Here's the cheat sheet:
+
+| Provider | Command | Scopes? |
+|----------|---------|---------|
+| Google Calendar | `scripts/tapauth.sh google calendar.readonly` | **Required** — see `references/google.md` |
+| Gmail | `scripts/tapauth.sh google https://www.googleapis.com/auth/gmail.send` | **Required** |
+| Google Sheets | `scripts/tapauth.sh google_sheets` | Optional (defaults given) |
+| Google Docs | `scripts/tapauth.sh google_docs` | Optional (defaults given) |
+| GitHub | `scripts/tapauth.sh github repo` | **Required** — `repo`, `read:user`, etc. |
+| Vercel | `scripts/tapauth.sh vercel` | **Not needed** — integration-level |
+| Notion | `scripts/tapauth.sh notion` | **Not needed** — integration-level |
+| Slack | `scripts/tapauth.sh slack` | **Not needed** — integration-level |
+| Asana | `scripts/tapauth.sh asana` | **Not needed** — integration-level |
+| Linear | `scripts/tapauth.sh linear read` | **Required** — `read`, `write`, `issues:create` |
+| Sentry | `scripts/tapauth.sh sentry project:read` | **Required** |
+| Discord | `scripts/tapauth.sh discord identify` | **Required** — `identify`, `guilds`, etc. |
+
+**Key rule:** If a provider uses integration-level scopes (Vercel, Notion, Slack, Asana), just pass the provider name. If it uses per-grant scopes (Google, GitHub, Linear, Sentry, Discord), you must specify what you need.
 
 ## Usage Pattern
 
 The pattern is always the same:
 
 ```bash
-curl -H "Authorization: Bearer $(scripts/tapauth.sh <provider> <scopes>)" \
+curl -H "Authorization: Bearer $(scripts/tapauth.sh <provider> [scopes])" \
   <api-url>
 ```
 
@@ -166,7 +187,7 @@ curl -s -H "Authorization: Bearer $(scripts/tapauth.sh google drive.readonly)" \
   "https://www.googleapis.com/drive/v3/files?pageSize=10&fields=files(id,name,mimeType)"
 ```
 
-### List Vercel deployments
+### List Vercel deployments (no scopes needed)
 
 ```bash
 curl -s -H "Authorization: Bearer $(scripts/tapauth.sh vercel)" \
@@ -209,14 +230,15 @@ See `references/` for provider-specific scopes, examples, and API details:
 To list all providers and valid scopes programmatically:
 
 ```bash
-curl -s https://tapauth.ai/api/providers
+curl -s https://tapauth.ai/api/v1/providers
 ```
 
 ## Provider Notes
 
 - **GitHub:** The `repo` scope grants read/write to repositories. Use `read:user` for profile info only.
 - **Google:** All Google providers support automatic token refresh. Use focused providers (`google_sheets`, `google_docs`) for simpler consent screens.
-- **Linear/Notion/Slack/Vercel:** Scopes are fixed at integration level, not per-request. The scope argument is still required but may be ignored.
+- **Notion/Slack/Vercel/Asana:** Scopes are fixed at integration level. No scope argument needed — just pass the provider name.
+- **Linear:** Requires explicit scopes (`read`, `write`, etc.) despite being an integration.
 - **Discord:** User OAuth tokens, not bot tokens. Tokens expire after ~7 days with automatic refresh.
 
 ## Token Lifetimes & Revocation
@@ -250,7 +272,7 @@ If you can't use the CLI script, the API flow is:
 
 1. **Create grant:** `POST https://tapauth.ai/api/v1/grants` with `provider` and `scopes`
 2. **User approves** at the returned `approve_url`
-3. **Get token:** `GET https://tapauth.ai/api/v1/token/{grant_id}` with `Authorization: Bearer {grant_secret}`
+3. **Get token:** `GET https://tapauth.ai/api/v1/grants/{grant_id}` with `Authorization: Bearer gs_...` header (add `Accept: text/plain` for .env format)
 
 | Status | Meaning |
 |--------|---------|
