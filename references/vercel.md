@@ -8,13 +8,13 @@ Use `vercel` as the provider name.
 
 Unlike most providers, Vercel scopes are **fixed at the integration level** — you cannot request specific scopes per grant. The user authorizes the full TapAuth integration, which includes access to deployments, projects, environment variables, domains, team info, and user profile.
 
-Just omit scopes or pass any value — the token will have the integration's full permissions.
-
-## Example: Create a Grant
+Just run the script with `vercel` — no scopes needed:
 
 ```bash
-./scripts/tapauth.sh vercel "" "Deploy Manager"
+scripts/tapauth.sh vercel
 ```
+
+The token will have the integration's full permissions.
 
 ## Example: List Projects
 
