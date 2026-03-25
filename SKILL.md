@@ -2,10 +2,10 @@
 name: tapauth
 description: >-
   Use when you need an OAuth token for a user's account — Google Calendar, Gmail, GitHub, Slack,
-  Linear, Notion, Vercel, Sentry, Asana, Discord, or Google Docs/Sheets. No API key or credentials
-  needed. No setup. Just run the bundled script and it handles everything: grant creation, user
-  approval, token caching, and automatic refresh. Do NOT use for API key-based services, bot tokens,
-  or when you already have direct credentials.
+  Linear, Notion, Vercel, Sentry, Asana, Discord, or Apify. No API key or credentials needed. No setup.
+  Just run the bundled script and it handles everything: grant creation, user approval, token
+  caching, and automatic refresh. Do NOT use for API key-based services, bot tokens, or when you
+  already have direct credentials.
 license: MIT
 compatibility: Requires curl and bash. Works with Claude Code, Cursor, OpenClaw, Codex, GitHub Copilot, and any agent with shell access.
 metadata:
@@ -22,57 +22,82 @@ The user approves in their browser. You get a scoped token. That's it.
 
 ## How It Works
 
-This skill includes a CLI script at `scripts/tapauth.sh`. Use it inline with curl:
+This skill includes a CLI script at `scripts/tapauth.sh` with two modes:
+
+### Step 1 — Get the approval URL (default mode)
 
 ```bash
-curl -H "Authorization: Bearer $(scripts/tapauth.sh google calendar.readonly)" \
+scripts/tapauth.sh google calendar.readonly
+```
+
+This creates a grant and prints the approval URL to stdout:
+```
+Approve access: https://tapauth.ai/approve/abc123
+
+Show this URL to the user. Once they approve, run with --token to get the bearer token.
+```
+
+**Show the URL to the user.** They must click it, sign in, and approve. This command exits immediately — it does not block or poll.
+
+### Step 2 — Immediately run the API call with `--token`
+
+```bash
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.readonly)" \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 ```
 
-That's a complete, working example. The script handles everything:
+Run this **right after** showing the URL — do not wait for the user to confirm they approved. The `--token` flag polls automatically (every 5 seconds, up to 10 minutes) until the user approves, then outputs the bearer token to stdout. The `$(...)` substitution feeds it directly into curl.
 
-- **First run:** Creates a grant, prints an approval URL to stderr, polls until the user approves, then outputs the token to stdout.
-- **Subsequent runs:** Returns the cached token instantly. Automatically refreshes expired tokens.
+**Always use `--token` inline with `$(...)`.** Do NOT capture the token into a shell variable like `TOKEN=$(...)`. The inline pattern keeps the token out of shell history and process listings.
 
-The `$(...)` command substitution captures stdout (the token) while the approval URL goes to stderr — so curl gets a clean Bearer token.
+**On subsequent runs,** the token is cached. Both modes detect this — default mode prints "Already authorized", and `--token` returns the cached token instantly.
+
+> **⚠️ IMPORTANT: Always run default mode first on first use with a provider.**
+>
+> Do NOT skip straight to `--token` inside `$(...)` on first run — it will block
+> polling for up to 10 minutes while the approval URL is hidden in tool output.
+> Run without `--token` first to get the URL, show it to the user, then use `--token`.
 
 ## Gotchas
 
 - **No API key or credentials needed.** TapAuth is zero-config. Do not look for API keys, client secrets, or environment variables. Just run the script.
 - **Always use the bundled script.** The script is at `scripts/tapauth.sh` inside this skill. Do NOT download it from the website — you already have it.
-- **Approval URL goes to stderr, token goes to stdout.** The `$(scripts/tapauth.sh ...)` pattern works because the token is on stdout and the approval URL is on stderr. Don't redirect stderr to stdout or the token will be corrupted.
-- **Surface the approval URL to the user.** The script prints it to stderr. The user must click the link, sign in with their account, and approve. Nothing happens until they do.
+- **Always run default mode first, then `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token. Don't skip to `--token` on first run — the user needs to see and click the approval URL first.
 - **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
 - **Tokens are cached automatically.** After the first approval, subsequent runs return the cached token instantly. Don't create new grants when you already have a cached token.
-- **Use focused Google providers when possible.** `google_sheets` or `google_docs` give simpler consent screens than `google` with full scopes.
 
 ## Quick Reference — Provider + Scopes
 
-Some providers require scopes, others don't. Here's the cheat sheet:
+Scopes are **required** for all providers. Here's the cheat sheet:
 
-| Provider | Command | Scopes? |
-|----------|---------|---------|
-| Google Calendar | `scripts/tapauth.sh google calendar.readonly` | **Required** — see `references/google.md` |
-| Gmail | `scripts/tapauth.sh google https://www.googleapis.com/auth/gmail.send` | **Required** |
-| Google Sheets | `scripts/tapauth.sh google_sheets` | Optional (defaults given) |
-| Google Docs | `scripts/tapauth.sh google_docs` | Optional (defaults given) |
-| GitHub | `scripts/tapauth.sh github repo` | **Required** — `repo`, `read:user`, etc. |
-| Vercel | `scripts/tapauth.sh vercel` | **Not needed** — integration-level |
-| Notion | `scripts/tapauth.sh notion` | **Not needed** — integration-level |
-| Slack | `scripts/tapauth.sh slack` | **Not needed** — integration-level |
-| Asana | `scripts/tapauth.sh asana` | **Not needed** — integration-level |
-| Linear | `scripts/tapauth.sh linear read` | **Required** — `read`, `write`, `issues:create` |
-| Sentry | `scripts/tapauth.sh sentry project:read` | **Required** |
-| Discord | `scripts/tapauth.sh discord identify` | **Required** — `identify`, `guilds`, etc. |
+| Provider | Command | Scopes |
+|----------|---------|--------|
+| Google Calendar | `scripts/tapauth.sh google calendar.readonly` | See `references/google.md` |
+| Google Drive | `scripts/tapauth.sh google drive.readonly` | See `references/google.md` |
+| Google Sheets | `scripts/tapauth.sh google spreadsheets.readonly` | Use `google` provider with sheets scopes |
+| Google Docs | `scripts/tapauth.sh google documents.readonly` | Use `google` provider with docs scopes |
+| GitHub | `scripts/tapauth.sh github repo` | `repo`, `read:user`, etc. |
+| Vercel | `scripts/tapauth.sh vercel deployment` | `deployment`, `project`, etc. |
+| Notion | `scripts/tapauth.sh notion read_content` | `read_content`, `update_content`, etc. |
+| Slack | `scripts/tapauth.sh slack users:read` | `users:read`, `channels:read`, etc. |
+| Asana | `scripts/tapauth.sh asana tasks:read` | `tasks:read`, `projects:read`, etc. |
+| Linear | `scripts/tapauth.sh linear read` | `read`, `write`, `issues:create` |
+| Sentry | `scripts/tapauth.sh sentry project:read` | `org:read`, `project:read`, etc. |
+| Discord | `scripts/tapauth.sh discord identify` | `identify`, `guilds`, etc. |
+| Apify | `scripts/tapauth.sh apify full_api_access` | `full_api_access` |
 
-**Key rule:** If a provider uses integration-level scopes (Vercel, Notion, Slack, Asana), just pass the provider name. If it uses per-grant scopes (Google, GitHub, Linear, Sentry, Discord), you must specify what you need.
+**Key rule:** Always specify the scopes you need. Check the provider's reference file for valid scope values.
 
 ## Usage Pattern
 
-The pattern is always the same:
+The pattern is always the same — **default mode first, then `--token`:**
 
 ```bash
-curl -H "Authorization: Bearer $(scripts/tapauth.sh <provider> [scopes])" \
+# 1. Get the approval URL (show it to the user)
+scripts/tapauth.sh <provider> [scopes]
+
+# 2. Use the token
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token <provider> [scopes])" \
   <api-url>
 ```
 
@@ -80,59 +105,62 @@ For requests that need a body:
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $(scripts/tapauth.sh <provider> <scopes>)" \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token <provider> <scopes>)" \
   -H "Content-Type: application/json" \
   -d '{"key": "value"}' \
   <api-url>
 ```
 
-If you need the token for multiple requests, capture it once:
+For multiple requests, repeat the `$(...)` inline pattern — the token is cached so each call returns instantly:
 
 ```bash
-TOKEN=$(scripts/tapauth.sh github repo)
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
+  "https://api.github.com/repos/owner/repo/issues?state=open&per_page=10"
 
-# Use it in multiple calls
-curl -H "Authorization: Bearer $TOKEN" \
-  "https://api.github.com/user/repos?per_page=5"
-
-curl -X POST -H "Authorization: Bearer $TOKEN" \
+curl -X POST -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
   -H "Content-Type: application/json" \
   -d '{"title": "Bug report", "body": "Details here"}' \
   "https://api.github.com/repos/owner/repo/issues"
 ```
 
+Do NOT store the token in a shell variable — the inline `$(...)` pattern is both simpler and more secure.
+
 ## First-Run Flow
 
-On first run, the script will:
+On first use with a provider:
 
-1. Create a grant via the TapAuth API
-2. Print an approval URL to stderr — **show this to the user**
-3. Poll every 2 seconds (up to 10 minutes) waiting for approval
-4. Once approved, output the token to stdout and cache it locally
+1. Run `scripts/tapauth.sh <provider> [scopes]` (default mode) — creates a grant, prints the approval URL, exits immediately.
+2. **Show the approval URL to the user.**
+3. Immediately run your `curl` with `$(scripts/tapauth.sh --token <provider> [scopes])` — it polls automatically until the user approves, then returns the bearer token.
 
-Example stderr output:
+Example default-mode output:
 ```
-Creating grant for google (calendar.readonly)...
 Approve access: https://tapauth.ai/approve/abc123
-Waiting for approval... (2s) https://tapauth.ai/approve/abc123
-Waiting for approval... (4s) https://tapauth.ai/approve/abc123
+
+Show this URL to the user. Once they approve, run with --token to get the bearer token.
 ```
 
-**Important:** Surface the approval URL to the user clearly. They need to click it, sign in, and approve.
+Example `--token` mode (polling):
+```
+Waiting for approval... (2s)
+Waiting for approval... (4s)
+```
+
+Once approved, the token is cached. Subsequent runs of either mode return instantly.
 
 ## Real-World Examples
 
 ### List Google Calendar events
 
 ```bash
-curl -s -H "Authorization: Bearer $(scripts/tapauth.sh google calendar.readonly)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.readonly)" \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=10&orderBy=startTime&singleEvents=true&timeMin=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 ### Read a GitHub repo's issues
 
 ```bash
-curl -s -H "Authorization: Bearer $(scripts/tapauth.sh github repo)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
   "https://api.github.com/repos/owner/repo/issues?state=open&per_page=10"
 ```
 
@@ -140,7 +168,7 @@ curl -s -H "Authorization: Bearer $(scripts/tapauth.sh github repo)" \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $(scripts/tapauth.sh github repo)" \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
   -H "Content-Type: application/json" \
   -d '{"title": "Fix login bug", "body": "Steps to reproduce..."}' \
   "https://api.github.com/repos/owner/repo/issues"
@@ -153,7 +181,7 @@ curl -s -X POST \
 EMAIL=$(printf "To: recipient@example.com\r\nSubject: Hello\r\n\r\nMessage body" | base64)
 
 curl -s -X POST \
-  -H "Authorization: Bearer $(scripts/tapauth.sh google https://www.googleapis.com/auth/gmail.send)" \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token google https://www.googleapis.com/auth/gmail.send)" \
   -H "Content-Type: application/json" \
   -d "{\"raw\": \"$EMAIL\"}" \
   "https://www.googleapis.com/gmail/v1/users/me/messages/send"
@@ -163,7 +191,7 @@ curl -s -X POST \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $(scripts/tapauth.sh linear read)" \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token linear read)" \
   -H "Content-Type: application/json" \
   -d '{"query": "{ issues(first: 10) { nodes { title state { name } } } }"}' \
   "https://api.linear.app/graphql"
@@ -173,7 +201,7 @@ curl -s -X POST \
 
 ```bash
 curl -s -X POST \
-  -H "Authorization: Bearer $(scripts/tapauth.sh notion)" \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token notion)" \
   -H "Content-Type: application/json" \
   -H "Notion-Version: 2022-06-28" \
   -d '{"query": "meeting notes"}' \
@@ -183,14 +211,14 @@ curl -s -X POST \
 ### List Google Drive files
 
 ```bash
-curl -s -H "Authorization: Bearer $(scripts/tapauth.sh google drive.readonly)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token google drive.readonly)" \
   "https://www.googleapis.com/drive/v3/files?pageSize=10&fields=files(id,name,mimeType)"
 ```
 
-### List Vercel deployments (no scopes needed)
+### List Vercel deployments
 
 ```bash
-curl -s -H "Authorization: Bearer $(scripts/tapauth.sh vercel)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token vercel)" \
   "https://api.vercel.com/v6/deployments?limit=5"
 ```
 
@@ -214,8 +242,6 @@ See `references/` for provider-specific scopes, examples, and API details:
 | GitHub | `github` | `references/github.md` |
 | Google (multi-service) | `google` | `references/google.md` |
 | Gmail | `google` with gmail scopes | `references/gmail.md` |
-| Google Sheets | `google_sheets` | `references/google_sheets.md` |
-| Google Docs | `google_docs` | `references/google_docs.md` |
 | Linear | `linear` | `references/linear.md` |
 | Vercel | `vercel` | `references/vercel.md` |
 | Notion | `notion` | `references/notion.md` |
@@ -223,9 +249,9 @@ See `references/` for provider-specific scopes, examples, and API details:
 | Sentry | `sentry` | `references/sentry.md` |
 | Asana | `asana` | `references/asana.md` |
 | Discord | `discord` | `references/discord.md` |
+| Apify | `apify` | `references/apify.md` |
 
-> **Tip:** Use `google_sheets` or `google_docs` when you only need one Google service.
-> Use `google` when you need multiple services (Drive, Calendar, Gmail, Contacts).
+> The `google` provider covers all Google services (Drive, Calendar, Sheets, Docs, Gmail, Contacts).
 
 To list all providers and valid scopes programmatically:
 
@@ -236,10 +262,11 @@ curl -s https://tapauth.ai/api/v1/providers
 ## Provider Notes
 
 - **GitHub:** The `repo` scope grants read/write to repositories. Use `read:user` for profile info only.
-- **Google:** All Google providers support automatic token refresh. Use focused providers (`google_sheets`, `google_docs`) for simpler consent screens.
-- **Notion/Slack/Vercel/Asana:** Scopes are fixed at integration level. No scope argument needed — just pass the provider name.
-- **Linear:** Requires explicit scopes (`read`, `write`, etc.) despite being an integration.
+- **Google:** Supports automatic token refresh. Use the `google` provider for all Google services (Calendar, Sheets, Docs, Drive, Gmail, Contacts).
+- **Notion/Slack/Vercel:** Scopes are fixed at integration level but must still be specified.
+- **Linear:** Requires explicit scopes (`read`, `write`, etc.).
 - **Discord:** User OAuth tokens, not bot tokens. Tokens expire after ~7 days with automatic refresh.
+- **Apify:** Uses Dynamic Client Registration (DCR) and PKCE. Only `full_api_access` scope available. Tokens expire and auto-refresh.
 
 ## Token Lifetimes & Revocation
 
@@ -254,10 +281,10 @@ TapAuth uses zero-knowledge encryption — tokens are encrypted with your `grant
 
 ### Ask the user to approve, then proceed
 ```
-1. Run scripts/tapauth.sh <provider> <scopes>
-2. It prints an approval URL to stderr — show this to the user
-3. It polls automatically until approved (up to 10 minutes)
-4. Use the returned token in your API calls
+1. Run scripts/tapauth.sh <provider> [scopes] — prints approval URL, exits immediately
+2. Show the URL to the user
+3. Immediately run curl with $(scripts/tapauth.sh --token <provider> [scopes]) — polls until approved
+4. User approves in their browser while the script waits — curl executes automatically
 ```
 
 ### Handle expiry gracefully
@@ -290,7 +317,7 @@ See the [API docs](https://tapauth.ai/docs) for full details on request/response
 |-------|-------|----------|
 | `tapauth: failed to create grant` | Invalid provider or scopes | Check `references/` for valid provider IDs and scope formats |
 | Token expired / 401 on API call | Cached token expired, refresh failed | Delete `.tapauth/` and re-run to create a fresh grant |
-| Approval URL not visible | stderr suppressed by agent runtime | Capture stderr separately or check `.tapauth/` for pending grant files |
+| Approval URL not visible | Skipped default mode and went straight to `--token` | Run `scripts/tapauth.sh <provider> [scopes]` (without `--token`) first to get the approval URL, show it to the user, then use `--token`. |
 | `tapauth: timed out after 600s` | User didn't approve within 10 minutes | Re-run to create a new grant with a fresh approval URL |
 
 ## OpenClaw Secrets Provider
