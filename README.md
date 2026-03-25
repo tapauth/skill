@@ -29,10 +29,8 @@ No API key needed. No signup needed. The user's approval is the only gate.
 | Provider | Reference | Scopes |
 |----------|-----------|--------|
 | GitHub | [references/github.md](references/github.md) | `repo`, `read:user`, `workflow`, etc. |
-| Google Workspace | [references/google.md](references/google.md) | Drive, Calendar, Sheets, Docs, Contacts |
+| Google (multi-service) | [references/google.md](references/google.md) | Drive, Calendar, Sheets, Docs, Contacts |
 | Gmail | [references/gmail.md](references/gmail.md) | Read, send, manage emails |
-| Google Sheets | [references/google_sheets.md](references/google_sheets.md) | Read and write spreadsheets |
-| Google Docs | [references/google_docs.md](references/google_docs.md) | Read and write documents |
 | Linear | [references/linear.md](references/linear.md) | Issues, projects, teams |
 | Vercel | [references/vercel.md](references/vercel.md) | Deployments, projects, env vars, domains |
 | Notion | [references/notion.md](references/notion.md) | Pages, databases, search |
@@ -40,6 +38,7 @@ No API key needed. No signup needed. The user's approval is the only gate.
 | Asana | [references/asana.md](references/asana.md) | Tasks, projects, workspaces |
 | Discord | [references/discord.md](references/discord.md) | Guilds, channels, messages, users |
 | Sentry | [references/sentry.md](references/sentry.md) | Error tracking, projects, organizations |
+| Apify | [references/apify.md](references/apify.md) | Actors, web scraping, datasets, automation |
 
 ## Quick Example
 
