@@ -1,8 +1,27 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+#
+# tapauth.sh — OAuth token broker for AI agents
+# https://github.com/tapauth/tapauth-skill
+#
+# Part of the TapAuth project (https://tapauth.ai).
+# This script creates delegated OAuth grants, caches tokens locally,
+# and refreshes them automatically. It communicates only with the
+# TapAuth API at TAPAUTH_BASE_URL (default: https://tapauth.ai).
+#
+# Security notes:
+#   - Tokens are cached in a per-user directory with mode 700/600
+#   - No eval or source is used; API responses are parsed via
+#     an allowlisted KEY=VALUE reader (see parse_env_response)
+#   - curl output is never executed; only known variable names
+#     are extracted from structured text/plain API responses
+#   - The polling loop has a hard 600-second timeout
+#
 set -euo pipefail
 
 TAPAUTH_BASE="${TAPAUTH_BASE_URL:-https://tapauth.ai}"
 TAPAUTH_DIR="${TAPAUTH_HOME:-${CLAUDE_PLUGIN_DATA:-./.tapauth}}"
+# Create per-user token cache directory with owner-only access
 mkdir -p "$TAPAUTH_DIR" && chmod 700 "$TAPAUTH_DIR"
 
 mode="url"
@@ -20,6 +39,25 @@ fi
 safe_name="${provider}-${sorted:-all}"
 env_file="${TAPAUTH_DIR}/$(echo "$safe_name" | tr '/:' '__').env"
 
+# Parse a KEY=VALUE response from the TapAuth API.
+# Only assigns to known TAPAUTH_ variables; all other lines are ignored.
+# This avoids eval/source, which static analyzers flag as unsafe.
+parse_env_response() {
+  local input="$1"
+  while IFS='=' read -r key value; do
+    key="${key#"${key%%[! ]*}"}"
+    case "$key" in
+      TAPAUTH_TOKEN)        TAPAUTH_TOKEN="$value" ;;
+      TAPAUTH_GRANT_ID)     TAPAUTH_GRANT_ID="$value" ;;
+      TAPAUTH_GRANT_SECRET) TAPAUTH_GRANT_SECRET="$value" ;;
+      TAPAUTH_APPROVE_URL)  TAPAUTH_APPROVE_URL="$value" ;;
+      TAPAUTH_EXPIRES)      TAPAUTH_EXPIRES="$value" ;;
+      TAPAUTH_STATUS)       TAPAUTH_STATUS="$value" ;;
+    esac
+  done <<< "$input"
+}
+
+# Write token cache file with owner-read-only permissions
 save() {
   install -m 600 /dev/null "$env_file"
   cat > "$env_file" <<EOF
@@ -33,16 +71,17 @@ EOF
 fetch() {
   TAPAUTH_TOKEN="" TAPAUTH_STATUS=""
   local resp http_code body
-  resp=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${TAPAUTH_GRANT_SECRET}" \
-    -H 'Accept: text/plain' "${TAPAUTH_BASE}/api/v1/grants/${TAPAUTH_GRANT_ID}")
+  resp=$(curl --silent --show-error -w "\n%{http_code}" \
+    -H "Authorization: Bearer ${TAPAUTH_GRANT_SECRET}" \
+    -H 'Accept: text/plain' "${TAPAUTH_BASE}/api/v1/grants/${TAPAUTH_GRANT_ID}") || true
   http_code="${resp##*$'\n'}"
   body="${resp%$'\n'*}"
-  eval "$(echo "$body" | grep '^TAPAUTH_[A-Z_]*=')" 2>/dev/null || true
+  parse_env_response "$body"
 }
 
 # --- Cached flow ---
 if [ -f "$env_file" ]; then
-  source "$env_file"
+  parse_env_response "$(cat "$env_file")"
   if [ -n "${TAPAUTH_EXPIRES:-}" ] && [ "$(date +%s)" -lt "${TAPAUTH_EXPIRES:-0}" ]; then
     if [ "$mode" = "url" ]; then
       echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."
@@ -67,15 +106,15 @@ fi
 create_grant() {
   echo "Creating grant for ${provider}${sorted:+ ($sorted)}..." >&2
   TAPAUTH_GRANT_ID="" TAPAUTH_GRANT_SECRET="" TAPAUTH_APPROVE_URL=""
-  create_args=(curl -s -w "\n%{http_code}" -X POST -H 'Accept: text/plain'
+  create_args=(curl --silent --show-error -w "\n%{http_code}" -X POST -H 'Accept: text/plain'
     --data-urlencode "provider=${provider}")
   [ -n "$sorted" ] && create_args+=(--data-urlencode "scopes=${sorted}")
   [ -n "${TAPAUTH_AGENT_NAME:-}" ] && create_args+=(--data-urlencode "agent_name=${TAPAUTH_AGENT_NAME}")
   create_args+=("${TAPAUTH_BASE}/api/v1/grants")
-  resp=$("${create_args[@]}")
-  eval "$(echo "${resp%$'\n'*}" | grep '^TAPAUTH_[A-Z_]*=')" 2>/dev/null || true
+  local resp
+  resp=$("${create_args[@]}") || true
+  parse_env_response "${resp%$'\n'*}"
   [ -z "${TAPAUTH_GRANT_ID:-}" ] && { echo "tapauth: failed to create grant" >&2; exit 1; }
-  # Save grant info so --token can pick it up
   save
 }
 
@@ -105,6 +144,8 @@ if [ "$mode" = "url" ]; then
 fi
 
 # --- Token mode: poll until approved ---
+# Poll the TapAuth API until the user approves the grant in their browser.
+# Hard timeout: 600 seconds (10 minutes). Prints status to stderr.
 poll_start=$SECONDS
 while true; do
   sleep 5

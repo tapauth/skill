@@ -13,7 +13,7 @@ TapAuth provides user OAuth tokens. These let you read user info and server list
 The `guilds` scope returns the user's server (guild) list only — names, icons, and IDs. It does NOT grant access to channels, messages, or members within those servers.
 
 ### Token Expiry (~7 Days)
-Discord access tokens expire after approximately 7 days. TapAuth handles automatic refresh using the refresh token, so subsequent calls to `$(./tapauth discord identify)` return a fresh token without user interaction.
+Discord access tokens expire after approximately 7 days. TapAuth handles automatic refresh using the refresh token, so subsequent calls to `$(scripts/tapauth.sh --token discord identify)` return a fresh token without user interaction.
 
 ### No Granular Permissions
 Discord OAuth scopes are coarse — you can't request "read messages in one channel." The scopes control what user data you can read, not what actions you can take in servers.
@@ -30,15 +30,15 @@ Discord OAuth scopes are coarse — you can't request "read messages in one chan
 
 ```bash
 # Get current user info
-curl -s -H "Authorization: Bearer $(./tapauth discord identify)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token discord identify)" \
   https://discord.com/api/v10/users/@me
 
 # Get user's server list
-curl -s -H "Authorization: Bearer $(./tapauth discord identify,guilds)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token discord identify,guilds)" \
   https://discord.com/api/v10/users/@me/guilds
 
 # Get user's email (requires email scope)
-curl -s -H "Authorization: Bearer $(./tapauth discord identify,email)" \
+curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token discord identify,email)" \
   https://discord.com/api/v10/users/@me
 ```
 

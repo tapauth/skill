@@ -65,20 +65,23 @@ Run this **right after** showing the URL — do not wait for the user to confirm
 - **Always run default mode first, then `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token. Don't skip to `--token` on first run — the user needs to see and click the approval URL first.
 - **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
 - **Tokens are cached automatically.** After the first approval, subsequent runs return the cached token instantly. Don't create new grants when you already have a cached token.
+- **Multiple scopes:** Pass comma-separated: `scripts/tapauth.sh google calendar.events,spreadsheets`
+- **OpenClaw agents:** If running under OpenClaw, prefer the exec secrets provider (`references/openclaw.md`) over inline `$(...)` — it resolves tokens at startup and keeps them out of shell commands entirely.
 
 ## Quick Reference — Provider + Scopes
 
-Scopes are **required** for all providers. Here's the cheat sheet:
+Most providers require scopes. Some (Vercel, Notion) use integration-level permissions instead. Here's the cheat sheet:
 
 | Provider | Command | Scopes |
 |----------|---------|--------|
-| Google Calendar | `scripts/tapauth.sh google calendar.readonly` | See `references/google.md` |
+| Google Calendar (read) | `scripts/tapauth.sh google calendar.readonly` | See `references/google.md` |
+| Google Calendar (read/write) | `scripts/tapauth.sh google calendar.events` | See `references/google.md` |
 | Google Drive | `scripts/tapauth.sh google drive.readonly` | See `references/google.md` |
 | Google Sheets | `scripts/tapauth.sh google spreadsheets.readonly` | Use `google` provider with sheets scopes |
 | Google Docs | `scripts/tapauth.sh google documents.readonly` | Use `google` provider with docs scopes |
 | GitHub | `scripts/tapauth.sh github repo` | `repo`, `read:user`, etc. |
-| Vercel | `scripts/tapauth.sh vercel deployment` | `deployment`, `project`, etc. |
-| Notion | `scripts/tapauth.sh notion read_content` | `read_content`, `update_content`, etc. |
+| Vercel | `scripts/tapauth.sh vercel` | Integration-level (no per-grant scopes) |
+| Notion | `scripts/tapauth.sh notion` | Integration-level (no per-grant scopes) |
 | Slack | `scripts/tapauth.sh slack users:read` | `users:read`, `channels:read`, etc. |
 | Asana | `scripts/tapauth.sh asana tasks:read` | `tasks:read`, `projects:read`, etc. |
 | Linear | `scripts/tapauth.sh linear read` | `read`, `write`, `issues:create` |
@@ -155,6 +158,21 @@ Once approved, the token is cached. Subsequent runs of either mode return instan
 ```bash
 curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.readonly)" \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=10&orderBy=startTime&singleEvents=true&timeMin=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+### Create a Google Calendar event
+
+```bash
+# Replace YYYY-MM-DD with a future date (e.g. 2025-06-15)
+curl -s -X POST \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.events)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Team standup",
+    "start": {"dateTime": "YYYY-MM-DDT09:00:00Z"},
+    "end":   {"dateTime": "YYYY-MM-DDT09:30:00Z"}
+  }' \
+  "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 ```
 
 ### Read a GitHub repo's issues
@@ -263,7 +281,8 @@ curl -s https://tapauth.ai/api/v1/providers
 
 - **GitHub:** The `repo` scope grants read/write to repositories. Use `read:user` for profile info only.
 - **Google:** Supports automatic token refresh. Use the `google` provider for all Google services (Calendar, Sheets, Docs, Drive, Gmail, Contacts).
-- **Notion/Slack/Vercel:** Scopes are fixed at integration level but must still be specified.
+- **Notion/Vercel:** Scopes are fixed at integration level — no scopes needed in the command.
+- **Slack:** Uses `user_scope` permissions. Specify the scopes you need (e.g., `users:read`, `channels:read`).
 - **Linear:** Requires explicit scopes (`read`, `write`, etc.).
 - **Discord:** User OAuth tokens, not bot tokens. Tokens expire after ~7 days with automatic refresh.
 - **Apify:** Uses Dynamic Client Registration (DCR) and PKCE. Only `full_api_access` scope available. Tokens expire and auto-refresh.
