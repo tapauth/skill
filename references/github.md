@@ -20,7 +20,7 @@
 
 ```bash
 # 1. Get a token with repo scope
-./scripts/tapauth.sh github "repo,read:user" "Repo Browser"
+scripts/tapauth.sh github repo,read:user
 
 # 2. Use the token
 curl -H "Authorization: Bearer <token>" \

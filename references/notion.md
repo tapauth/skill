@@ -13,7 +13,7 @@ The user will be asked to select which pages/databases to share with TapAuth. Th
 ## Example: Create a Grant
 
 ```bash
-./scripts/tapauth.sh notion "" "Note Taker"
+scripts/tapauth.sh notion
 ```
 
 ## Example: Get Current User

@@ -14,7 +14,7 @@
 
 ```bash
 # 1. Get a token
-./scripts/tapauth.sh linear "read" "Issue Tracker"
+scripts/tapauth.sh linear read
 
 # 2. Query via GraphQL
 curl -X POST -H "Authorization: Bearer <token>" \

@@ -18,7 +18,7 @@ For full Gmail access, use the full URL: `https://mail.google.com/`
 
 ```bash
 # 1. Get a token
-./scripts/tapauth.sh google "gmail.readonly" "Email Reader"
+scripts/tapauth.sh google gmail.readonly
 
 # 2. List messages
 curl -H "Authorization: Bearer <token>" \
