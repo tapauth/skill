@@ -58,7 +58,7 @@ curl -X POST https://tapauth.ai/api/v1/grants \
   -H "Content-Type: application/json" \
   -d '{"provider": "github", "scopes": ["repo"]}'
 
-# 2. User clicks the approve_url
+# 2. User clicks the approval_url
 # 3. Retrieve the token
 curl https://tapauth.ai/api/v1/grants/{grant_id} \
   -H "Authorization: Bearer gs_..."
