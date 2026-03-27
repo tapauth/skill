@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.2] - 2026-03-27
+
+- Security: stop caching bearer tokens on disk; cache only grant credentials
+- Fix: recreate dead grants automatically in URL mode and fail fast in `--token`
+- Docs: align OpenClaw cache-directory guidance and timeout behavior
+
 ## [1.0.1] - 2026-03-26
 
 - Security: replace eval/source with explicit allowlisted KEY=VALUE parser
