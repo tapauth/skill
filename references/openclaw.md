@@ -4,9 +4,9 @@ TapAuth works with [OpenClaw's exec secrets provider](https://docs.openclaw.ai/g
 
 ## How It Works
 
-1. **One-time setup:** Run `tapauth.sh <provider> <scopes>` to create a grant and approve it in the browser. Grant credentials (ID + secret) are saved to `~/.tapauth/`.
-2. **Configure OpenClaw:** Add one exec provider per grant with `jsonOnly: false`. OpenClaw runs `tapauth.sh --token <provider> <scopes>` and reads the token from stdout.
-3. **Runtime:** OpenClaw resolves tokens at startup into an in-memory snapshot. `tapauth.sh` handles refresh automatically — if the cached token is expired, it fetches a fresh one from the TapAuth API.
+1. **One-time setup:** Run `tapauth.sh <provider> <scopes>` to create a grant and approve it in the browser. The approved grant ID + grant secret are saved in the script cache directory.
+2. **Configure OpenClaw:** Add one exec provider per grant with `jsonOnly: false`. OpenClaw must use the same cache directory you used during setup, so forward `TAPAUTH_HOME` or `CLAUDE_PLUGIN_DATA` into the exec provider environment. OpenClaw then runs `tapauth.sh --token <provider> <scopes>` and reads the token from stdout.
+3. **Runtime:** OpenClaw resolves tokens at startup into an in-memory snapshot. `tapauth.sh --token` uses the cached grant to fetch a fresh token from the TapAuth API when OpenClaw starts.
 
 ## Prerequisites
 
@@ -18,7 +18,9 @@ TapAuth works with [OpenClaw's exec secrets provider](https://docs.openclaw.ai/g
 ### 1. Create and approve grants
 
 ```bash
-# Each command creates a grant, prints an approval URL, and polls until approved
+export TAPAUTH_HOME="$HOME/.tapauth"
+
+# Each command creates a grant, prints an approval URL, and exits immediately
 scripts/tapauth.sh github repo
 scripts/tapauth.sh google calendar.readonly
 scripts/tapauth.sh slack channels:read,channels:history
@@ -38,21 +40,21 @@ Add to `~/.openclaw/openclaw.json`:
         source: "exec",
         command: "/path/to/skills/tapauth/scripts/tapauth.sh",
         args: ["--token", "github", "repo"],
-        passEnv: ["HOME"],
+        passEnv: ["TAPAUTH_HOME"],
         jsonOnly: false,
       },
       tapauth_google: {
         source: "exec",
         command: "/path/to/skills/tapauth/scripts/tapauth.sh",
         args: ["--token", "google", "calendar.readonly"],
-        passEnv: ["HOME"],
+        passEnv: ["TAPAUTH_HOME"],
         jsonOnly: false,
       },
       tapauth_slack: {
         source: "exec",
         command: "/path/to/skills/tapauth/scripts/tapauth.sh",
         args: ["--token", "slack", "channels:read,channels:history"],
-        passEnv: ["HOME"],
+        passEnv: ["TAPAUTH_HOME"],
         jsonOnly: false,
       },
     },
@@ -61,6 +63,7 @@ Add to `~/.openclaw/openclaw.json`:
 ```
 
 > Use the absolute path to `tapauth.sh`. If installed via ClawHub: `~/.openclaw/skills/tapauth/scripts/tapauth.sh`.
+> Set `TAPAUTH_HOME` before creating grants and before starting OpenClaw so both flows see the same cache. If your environment already provides `CLAUDE_PLUGIN_DATA`, pass that instead; relying on the default `./.tapauth` only works when OpenClaw runs from the same working directory as the setup step.
 
 ### 3. Reference tokens in config
 
@@ -82,16 +85,16 @@ The `id` is always `"value"` since each provider returns a single token on stdou
 ## Token Lifecycle
 
 - **Resolution:** Fresh tokens fetched at each OpenClaw activation (startup + reload).
-- **Caching:** `tapauth.sh` caches tokens locally with expiry. Subsequent calls return instantly if the token is still valid.
-- **Refresh:** When cached tokens expire, `tapauth.sh` fetches a fresh one from the TapAuth API. TapAuth handles OAuth refresh server-side.
-- **Re-approval:** If a grant is revoked, `tapauth.sh` exits with an error. Delete the cache file and re-run to create a new grant.
+- **Caching:** `tapauth.sh` caches approved grant credentials locally. Bearer tokens are fetched on demand and are not written to disk.
+- **Refresh:** Each `--token` call fetches a fresh token from the TapAuth API. TapAuth handles OAuth refresh server-side.
+- **Re-approval:** If a grant is revoked or expired, rerun `tapauth.sh <provider> <scopes>` to create a new approval URL.
 - **Manual reload:** `openclaw secrets reload` forces re-resolution without restart.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `token refresh failed` | Grant revoked or expired | Delete `~/.tapauth/<provider>-<scopes>.env`, re-run `tapauth.sh` |
-| Token works locally but not in OpenClaw | `passEnv` missing `HOME` | Add `HOME` to `passEnv` array |
+| `tapauth: cached grant is no longer usable` | Grant revoked, expired, denied, or deleted | Re-run `tapauth.sh <provider> <scopes>` to create a new approval URL, then retry OpenClaw |
+| Token works locally but not in OpenClaw | OpenClaw is using a different cache directory than setup | Export `TAPAUTH_HOME` during setup and startup, then add `TAPAUTH_HOME` to `passEnv` |
 | `command must be absolute path` | Relative path in `command` | Use full path: `/Users/you/.openclaw/skills/tapauth/scripts/tapauth.sh` |
 | Symlink error | Homebrew or similar | Add `allowSymlinkCommand: true` and `trustedDirs` to provider config |

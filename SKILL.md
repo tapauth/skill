@@ -50,13 +50,13 @@ Run this **right after** showing the URL — do not wait for the user to confirm
 
 **Always use `--token` inline with `$(...)`.** Do NOT capture the token into a shell variable like `TOKEN=$(...)`. The inline pattern keeps the token out of shell history and process listings.
 
-**On subsequent runs,** the token is cached. Both modes detect this — default mode prints "Already authorized", and `--token` returns the cached token instantly.
+**On subsequent runs,** the cached grant is reused. Default mode prints "Already authorized", and `--token` fetches a fresh bearer token immediately.
 
 > **⚠️ IMPORTANT: Always run default mode first on first use with a provider.**
 >
-> Do NOT skip straight to `--token` inside `$(...)` on first run — it will block
-> polling for up to 10 minutes while the approval URL is hidden in tool output.
-> Run without `--token` first to get the URL, show it to the user, then use `--token`.
+> Do NOT skip straight to `--token` inside `$(...)` on first run.
+> If there is no cached approved grant yet, `--token` exits and tells you to run
+> default mode first so the approval URL can be shown to the user.
 
 ## Gotchas
 
@@ -64,7 +64,7 @@ Run this **right after** showing the URL — do not wait for the user to confirm
 - **Always use the bundled script.** The script is at `scripts/tapauth.sh` inside this skill. Do NOT download it from the website — you already have it.
 - **Always run default mode first, then `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token. Don't skip to `--token` on first run — the user needs to see and click the approval URL first.
 - **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
-- **Tokens are cached automatically.** After the first approval, subsequent runs return the cached token instantly. Don't create new grants when you already have a cached token.
+- **Approved grants are cached automatically.** After the first approval, default mode detects existing authorization and `--token` can fetch a fresh token immediately. Don't create a new grant when you already have a working cached grant.
 - **Multiple scopes:** Pass comma-separated: `scripts/tapauth.sh google calendar.events,spreadsheets`
 - **OpenClaw agents:** If running under OpenClaw, prefer the exec secrets provider (`references/openclaw.md`) over inline `$(...)` — it resolves tokens at startup and keeps them out of shell commands entirely.
 
@@ -114,7 +114,7 @@ curl -X POST \
   <api-url>
 ```
 
-For multiple requests, repeat the `$(...)` inline pattern — the token is cached so each call returns instantly:
+For multiple requests, repeat the `$(...)` inline pattern — the cached grant is reused so each call returns immediately after fetching a fresh token:
 
 ```bash
 curl -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
@@ -149,7 +149,7 @@ Waiting for approval... (2s)
 Waiting for approval... (4s)
 ```
 
-Once approved, the token is cached. Subsequent runs of either mode return instantly.
+Once approved, the grant is cached. Subsequent runs of either mode return immediately.
 
 ## Real-World Examples
 
@@ -249,7 +249,7 @@ curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token vercel)" \
 
 **Cache directory priority:** `TAPAUTH_HOME` > `CLAUDE_PLUGIN_DATA` > `./.tapauth`
 
-**Caching:** Tokens are stored in the cache directory (mode 700, files mode 600). Each provider+scope combination gets its own cache file with the token, expiry, grant ID, and grant secret for automatic refresh.
+**Caching:** Grant credentials are stored in the cache directory (mode 700, files mode 600). Each provider+scope combination gets its own cache file with the grant ID and grant secret. Bearer tokens are fetched on demand and are not written to disk.
 
 ## Supported Providers
 
@@ -307,7 +307,7 @@ TapAuth uses zero-knowledge encryption — tokens are encrypted with your `grant
 ```
 
 ### Handle expiry gracefully
-If the cached token has expired, the script automatically refreshes it. If refresh fails, delete `.tapauth/` and re-run to create a fresh grant.
+If the cached grant is expired, revoked, or denied, re-run default mode to create a fresh approval URL. `--token` will tell you when to do this; no manual cache deletion is required.
 
 ### Scope selection
 Request the minimum scopes you need. Users see exactly what you're asking for and can approve with reduced permissions. Less scope = more trust = higher approval rate.
@@ -335,28 +335,37 @@ See the [API docs](https://tapauth.ai/docs) for full details on request/response
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `tapauth: failed to create grant` | Invalid provider or scopes | Check `references/` for valid provider IDs and scope formats |
-| Token expired / 401 on API call | Cached token expired, refresh failed | Delete `.tapauth/` and re-run to create a fresh grant |
+| `tapauth: cached grant is no longer usable` | Cached grant expired, revoked, denied, or was deleted server-side | Run `scripts/tapauth.sh <provider> [scopes]` again to create a fresh approval URL, then retry `--token` |
 | Approval URL not visible | Skipped default mode and went straight to `--token` | Run `scripts/tapauth.sh <provider> [scopes]` (without `--token`) first to get the approval URL, show it to the user, then use `--token`. |
-| `tapauth: timed out after 600s` | User didn't approve within 10 minutes | Re-run to create a new grant with a fresh approval URL |
+| `tapauth: timed out` | User didn't approve within 10 minutes | Re-run `scripts/tapauth.sh <provider> [scopes]`; it may reuse the same pending grant and approval URL. If you need a brand-new URL immediately, remove the cached grant file and run it again. |
 
 ## OpenClaw Secrets Provider
 
-TapAuth supports the OpenClaw exec secrets provider protocol via the `tapauth-secrets` script. This lets OpenClaw agents resolve OAuth tokens as secrets at startup.
+TapAuth integrates with OpenClaw's exec secrets provider. Configure one provider entry per grant — each runs `scripts/tapauth.sh --token` and returns a raw bearer token on stdout.
 
-Configure in your OpenClaw agent config:
+Example provider config (one entry per provider/scope combo):
 
 ```json
 {
   "secrets": {
-    "tapauth": {
-      "source": "exec",
-      "command": ["/path/to/tapauth-secrets"],
-      "passEnv": ["HOME", "TAPAUTH_HOME", "TAPAUTH_BASE_URL"]
+    "providers": {
+      "tapauth_google": {
+        "source": "exec",
+        "command": "scripts/tapauth.sh",
+        "args": ["--token", "google", "calendar.readonly"],
+        "passEnv": ["HOME"],
+        "jsonOnly": false
+      }
     }
   }
 }
 ```
 
-Reference tokens as `tapauth.provider/scopes` (e.g. `tapauth.google/calendar.readonly`).
+Key points:
+- **`command`** is a string path to `scripts/tapauth.sh` (resolved against the skill directory)
+- **`args`** passes `--token`, the provider name, and scopes
+- **`jsonOnly: false`** because the script outputs a raw token string, not JSON
+- **`passEnv`** must include `HOME` so the script can find its token cache at `~/.tapauth/`
+- Grants must be created and approved first — run `scripts/tapauth.sh <provider> <scopes>` (without `--token`) before configuring the exec provider
 
-**Note:** Grants must be pre-approved — `tapauth-secrets` uses a 10-second timeout and cannot prompt for interactive approval.
+See `references/openclaw.md` for multi-provider examples, SecretRef usage, token lifecycle, and troubleshooting.

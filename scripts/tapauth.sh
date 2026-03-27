@@ -1,108 +1,64 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-#
-# tapauth.sh — OAuth token broker for AI agents
-# https://github.com/tapauth/tapauth-skill
-#
-# Part of the TapAuth project (https://tapauth.ai).
-# This script creates delegated OAuth grants, caches tokens locally,
-# and refreshes them automatically. It communicates only with the
-# TapAuth API at TAPAUTH_BASE_URL (default: https://tapauth.ai).
-#
-# Security notes:
-#   - Tokens are cached in a per-user directory with mode 700/600
-#   - No eval or source is used; API responses are parsed via
-#     an allowlisted KEY=VALUE reader (see parse_env_response)
-#   - curl output is never executed; only known variable names
-#     are extracted from structured text/plain API responses
-#   - The polling loop has a hard 600-second timeout
-#
+# tapauth.sh — OAuth token broker for AI agents (https://tapauth.ai)
+# Security: no eval/source; allowlisted KEY=VALUE parser; cache mode 700/600; 600s poll timeout
 set -euo pipefail
 
 TAPAUTH_BASE="${TAPAUTH_BASE_URL:-https://tapauth.ai}"
 TAPAUTH_DIR="${TAPAUTH_HOME:-${CLAUDE_PLUGIN_DATA:-./.tapauth}}"
-# Create per-user token cache directory with owner-only access
 mkdir -p "$TAPAUTH_DIR" && chmod 700 "$TAPAUTH_DIR"
 
 mode="url"
-if [ "${1:-}" = "--token" ]; then mode="token"; shift; fi
+[ "${1:-}" = "--token" ] && { mode="token"; shift; }
 
 provider="${1:-}"; scopes="${2:-}"
 [ -z "$provider" ] && { echo "usage: tapauth [--token] <provider> [scopes]" >&2; exit 1; }
 [[ "$provider" =~ ^[a-z][a-z0-9_]*$ ]] || { echo "tapauth: invalid provider name" >&2; exit 1; }
 
-if [ -n "$scopes" ]; then
-  sorted=$(echo "$scopes" | tr "," "\n" | sort | tr "\n" "," | sed "s/,$//")
-else
-  sorted=""
-fi
-safe_name="${provider}-${sorted:-all}"
-env_file="${TAPAUTH_DIR}/$(echo "$safe_name" | tr '/:' '__').env"
+sorted=""
+[ -n "$scopes" ] && sorted=$(printf '%s' "$scopes" | tr ',' '\n' | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
+env_file="${TAPAUTH_DIR}/$(printf '%s' "${provider}-${sorted}" | tr '/:' '__').env"
 
-# Parse a KEY=VALUE response from the TapAuth API.
-# Only assigns to known TAPAUTH_ variables; all other lines are ignored.
-# This avoids eval/source, which static analyzers flag as unsafe.
+die() { echo "tapauth: $*" >&2; exit 1; }
+
+# Allowlisted KEY=VALUE parser — avoids eval/source (security review requirement)
 parse_env_response() {
-  local input="$1"
   while IFS='=' read -r key value; do
-    key="${key#"${key%%[! ]*}"}"
+    value="${value%$'\r'}"
     case "$key" in
       TAPAUTH_TOKEN)        TAPAUTH_TOKEN="$value" ;;
       TAPAUTH_GRANT_ID)     TAPAUTH_GRANT_ID="$value" ;;
       TAPAUTH_GRANT_SECRET) TAPAUTH_GRANT_SECRET="$value" ;;
       TAPAUTH_APPROVE_URL)  TAPAUTH_APPROVE_URL="$value" ;;
-      TAPAUTH_EXPIRES)      TAPAUTH_EXPIRES="$value" ;;
       TAPAUTH_STATUS)       TAPAUTH_STATUS="$value" ;;
     esac
-  done <<< "$input"
+  done <<< "$1"
 }
 
-# Write token cache file with owner-read-only permissions
+ready() {
+  [ "$mode" = "url" ] && { echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."; exit 0; }
+  [ -n "${TAPAUTH_TOKEN:-}" ] || die "no token in response"
+  echo "${TAPAUTH_TOKEN:-}"; exit 0
+}
+
 save() {
   install -m 600 /dev/null "$env_file"
   cat > "$env_file" <<EOF
-TAPAUTH_TOKEN=${TAPAUTH_TOKEN:-}
 TAPAUTH_GRANT_ID=${TAPAUTH_GRANT_ID:-}
 TAPAUTH_GRANT_SECRET=${TAPAUTH_GRANT_SECRET:-}
-TAPAUTH_EXPIRES=${TAPAUTH_EXPIRES:-}
 EOF
 }
 
 fetch() {
   TAPAUTH_TOKEN="" TAPAUTH_STATUS=""
-  local resp http_code body
+  local resp
   resp=$(curl --silent --show-error -w "\n%{http_code}" \
     -H "Authorization: Bearer ${TAPAUTH_GRANT_SECRET}" \
-    -H 'Accept: text/plain' "${TAPAUTH_BASE}/api/v1/grants/${TAPAUTH_GRANT_ID}") || true
-  http_code="${resp##*$'\n'}"
-  body="${resp%$'\n'*}"
-  parse_env_response "$body"
+    -H 'Accept: text/plain' "${TAPAUTH_BASE}/api/v1/grants/${TAPAUTH_GRANT_ID}") || die "failed to contact TapAuth"
+  TAPAUTH_HTTP="${resp##*$'\n'}"
+  parse_env_response "${resp%$'\n'*}"
 }
 
-# --- Cached flow ---
-if [ -f "$env_file" ]; then
-  parse_env_response "$(cat "$env_file")"
-  if [ -n "${TAPAUTH_EXPIRES:-}" ] && [ "$(date +%s)" -lt "${TAPAUTH_EXPIRES:-0}" ]; then
-    if [ "$mode" = "url" ]; then
-      echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."
-      exit 0
-    fi
-    echo "${TAPAUTH_TOKEN:-}"; exit 0
-  fi
-  # Token expired — try refresh
-  fetch
-  if [ -n "${TAPAUTH_TOKEN:-}" ]; then
-    save
-    if [ "$mode" = "url" ]; then
-      echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."
-      exit 0
-    fi
-    echo "$TAPAUTH_TOKEN"; exit 0
-  fi
-  # Refresh failed — fall through to create a new grant
-fi
-
-# --- Grant creation ---
 create_grant() {
   echo "Creating grant for ${provider}${sorted:+ ($sorted)}..." >&2
   TAPAUTH_GRANT_ID="" TAPAUTH_GRANT_SECRET="" TAPAUTH_APPROVE_URL=""
@@ -112,48 +68,59 @@ create_grant() {
   [ -n "${TAPAUTH_AGENT_NAME:-}" ] && create_args+=(--data-urlencode "agent_name=${TAPAUTH_AGENT_NAME}")
   create_args+=("${TAPAUTH_BASE}/api/v1/grants")
   local resp
-  resp=$("${create_args[@]}") || true
+  resp=$("${create_args[@]}") || die "failed to contact TapAuth"
+  TAPAUTH_HTTP="${resp##*$'\n'}"
   parse_env_response "${resp%$'\n'*}"
-  [ -z "${TAPAUTH_GRANT_ID:-}" ] && { echo "tapauth: failed to create grant" >&2; exit 1; }
+  case "$TAPAUTH_HTTP" in
+    200|201) [ -n "${TAPAUTH_GRANT_ID:-}" ] && [ -n "${TAPAUTH_GRANT_SECRET:-}" ] || die "failed to create grant" ;;
+    *) die "failed to create grant (${TAPAUTH_HTTP})" ;;
+  esac
   save
 }
 
-# --- Check for pending grant (created by a prior url-mode run) ---
-if [ -f "$env_file" ] && [ -z "${TAPAUTH_TOKEN:-}" ] && [ -n "${TAPAUTH_GRANT_ID:-}" ]; then
-  # Pending grant exists — try fetching token first
-  fetch
-  if [ -n "${TAPAUTH_TOKEN:-}" ]; then
-    save
-    if [ "$mode" = "url" ]; then
-      echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."
-      exit 0
-    fi
-    echo "$TAPAUTH_TOKEN"; exit 0
-  fi
-  # Still pending — re-use existing grant
-else
-  create_grant
-fi
-
-# --- URL mode: print approval URL and exit ---
-if [ "$mode" = "url" ]; then
+emit_url() {
   echo "Approve access: ${TAPAUTH_APPROVE_URL:-${TAPAUTH_BASE}/approve/${TAPAUTH_GRANT_ID}}"
   echo ""
   echo "Show this URL to the user. Once they approve, run with --token to get the bearer token."
   exit 0
+}
+
+TAPAUTH_GRANT_ID="" TAPAUTH_GRANT_SECRET="" TAPAUTH_APPROVE_URL=""
+[ -f "$env_file" ] && parse_env_response "$(cat "$env_file")"
+
+if [ -z "${TAPAUTH_GRANT_ID:-}" ] || [ -z "${TAPAUTH_GRANT_SECRET:-}" ]; then
+  [ "$mode" = "token" ] && die "run without --token first to get an approval URL"
+  create_grant
+  emit_url
 fi
 
-# --- Token mode: poll until approved ---
-# Poll the TapAuth API until the user approves the grant in their browser.
-# Hard timeout: 600 seconds (10 minutes). Prints status to stderr.
+fetch
+case "$TAPAUTH_HTTP" in
+  200) ready ;;
+  202) ;;
+  401|404|410)
+    [ "$mode" = "token" ] && die "cached grant is no longer usable; run without --token first to get a new approval URL"
+    create_grant
+    emit_url
+    ;;
+  *) die "grant fetch failed (${TAPAUTH_HTTP})" ;;
+esac
+
+# --- URL mode ---
+[ "$mode" = "url" ] && emit_url
+
+# --- Poll until approved (600s timeout) ---
 poll_start=$SECONDS
 while true; do
   sleep 5
-  [ $((SECONDS - poll_start)) -ge 600 ] && { echo "tapauth: timed out" >&2; exit 1; }
+  [ $((SECONDS - poll_start)) -ge 600 ] && die "timed out"
   echo "Waiting for approval... ($((SECONDS - poll_start))s)" >&2
   fetch
-  [ -n "${TAPAUTH_TOKEN:-}" ] && { echo "Approved! Fetching token..." >&2; break; }
-  case "${TAPAUTH_STATUS:-}" in expired|revoked|denied|link_expired) echo "tapauth: ${TAPAUTH_STATUS}" >&2; exit 1;; esac
+  [ "$TAPAUTH_HTTP" = "200" ] && { echo "Approved! Fetching token..." >&2; ready; }
+  case "$TAPAUTH_HTTP:${TAPAUTH_STATUS:-}" in
+    202:*) ;;
+    410:expired|410:revoked|410:denied|410:link_expired) die "${TAPAUTH_STATUS}" ;;
+    401:*|404:*|410:*) die "grant is no longer usable; run without --token first to get a new approval URL" ;;
+    *) die "grant fetch failed (${TAPAUTH_HTTP})" ;;
+  esac
 done
-
-save; echo "$TAPAUTH_TOKEN"
