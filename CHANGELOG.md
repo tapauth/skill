@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3] - 2026-04-16
+
+- Security: cache only grant credentials on disk and reuse approved grants without reissuing tokens locally
+- Fix: distinguish expired grants from revoked or deleted grants so agents can re-authorize in place
+- Docs: align raw API examples with `approval_url` and tighten OpenClaw publish guidance
+- Packaging: validate the exact staged ClawHub package before publishing and scan the staged artifact in CI
+
 ## [1.0.2] - 2026-03-27
 
 - Security: stop caching bearer tokens on disk; cache only grant credentials

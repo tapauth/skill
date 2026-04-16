@@ -42,13 +42,18 @@ No API key needed. No signup needed. The user's approval is the only gate.
 
 ## Quick Example
 
-### CLI (recommended)
+For OpenClaw, do not capture TapAuth tokens into shell variables. Create the grant, then wire the bundled script into the exec secrets provider described in `SKILL.md`.
 
 ```bash
-# One command. Token comes back ready to use.
-TOKEN=$(tapauth github repo)
-curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user/repos
+# 1. Create a grant and show the approval URL to the user
+TAPAUTH_HOME=/home/node/.tapauth /home/node/.openclaw/skills/tapauth/scripts/tapauth.sh github repo
+
+# 2. After approval, add the exec provider to ~/.openclaw/openclaw.json
+# 3. Reload secrets so OpenClaw resolves the token in memory
+openclaw secrets reload
 ```
+
+After that, reference the resolved secret from your OpenClaw config or package instead of using `TOKEN=$(...)`.
 
 ### API (v1)
 
