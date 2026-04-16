@@ -81,7 +81,11 @@ create_grant() {
 emit_url() {
   echo "Approve access: ${TAPAUTH_APPROVE_URL:-${TAPAUTH_BASE}/approve/${TAPAUTH_GRANT_ID}}"
   echo ""
-  echo "Show this URL to the user. Once they approve, run with --token to get the bearer token."
+  if [ "${TAPAUTH_STATUS:-}" = "expired" ]; then
+    echo "Show this URL to the user. Once they re-authorize, run with --token to get the bearer token."
+  else
+    echo "Show this URL to the user. Once they approve, run with --token to get the bearer token."
+  fi
   exit 0
 }
 
@@ -95,10 +99,14 @@ if [ -z "${TAPAUTH_GRANT_ID:-}" ] || [ -z "${TAPAUTH_GRANT_SECRET:-}" ]; then
 fi
 
 fetch
-case "$TAPAUTH_HTTP" in
-  200) ready ;;
-  202) ;;
-  401|404|410)
+case "$TAPAUTH_HTTP:${TAPAUTH_STATUS:-}" in
+  200:*) ready ;;
+  202:*) ;;
+  410:expired)
+    [ "$mode" = "token" ] && die "cached grant expired; run without --token first to re-authorize it"
+    emit_url
+    ;;
+  401:*|404:*|410:revoked|410:denied|410:link_expired|410:*)
     [ "$mode" = "token" ] && die "cached grant is no longer usable; run without --token first to get a new approval URL"
     create_grant
     emit_url
@@ -119,7 +127,8 @@ while true; do
   [ "$TAPAUTH_HTTP" = "200" ] && { echo "Approved! Fetching token..." >&2; ready; }
   case "$TAPAUTH_HTTP:${TAPAUTH_STATUS:-}" in
     202:*) ;;
-    410:expired|410:revoked|410:denied|410:link_expired) die "${TAPAUTH_STATUS}" ;;
+    410:expired) die "grant expired; run without --token first to re-authorize it" ;;
+    410:revoked|410:denied|410:link_expired) die "${TAPAUTH_STATUS}" ;;
     401:*|404:*|410:*) die "grant is no longer usable; run without --token first to get a new approval URL" ;;
     *) die "grant fetch failed (${TAPAUTH_HTTP})" ;;
   esac

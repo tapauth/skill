@@ -307,7 +307,7 @@ TapAuth uses zero-knowledge encryption — tokens are encrypted with your `grant
 ```
 
 ### Handle expiry gracefully
-If the cached grant is expired, revoked, or denied, re-run default mode to create a fresh approval URL. `--token` will tell you when to do this; no manual cache deletion is required.
+If the cached grant is expired, re-run default mode to show the same approval URL again so the user can re-authorize and extend that grant. If the cached grant is revoked, denied, or deleted server-side, default mode creates a fresh approval URL automatically. `--token` will tell you which case applies; no manual cache deletion is required.
 
 ### Scope selection
 Request the minimum scopes you need. Users see exactly what you're asking for and can approve with reduced permissions. Less scope = more trust = higher approval rate.
@@ -317,7 +317,7 @@ Request the minimum scopes you need. Users see exactly what you're asking for an
 If you can't use the CLI script, the API flow is:
 
 1. **Create grant:** `POST https://tapauth.ai/api/v1/grants` with `provider` and `scopes`
-2. **User approves** at the returned `approve_url`
+2. **User approves** at the returned `approval_url`
 3. **Get token:** `GET https://tapauth.ai/api/v1/grants/{grant_id}` with `Authorization: Bearer gs_...` header (add `Accept: text/plain` for .env format)
 
 | Status | Meaning |
@@ -335,7 +335,8 @@ See the [API docs](https://tapauth.ai/docs) for full details on request/response
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `tapauth: failed to create grant` | Invalid provider or scopes | Check `references/` for valid provider IDs and scope formats |
-| `tapauth: cached grant is no longer usable` | Cached grant expired, revoked, denied, or was deleted server-side | Run `scripts/tapauth.sh <provider> [scopes]` again to create a fresh approval URL, then retry `--token` |
+| `tapauth: cached grant expired` | Cached grant reached its expiry time | Run `scripts/tapauth.sh <provider> [scopes]` again to re-show the same approval URL, have the user re-authorize, then retry `--token` |
+| `tapauth: cached grant is no longer usable` | Cached grant was revoked, denied, link-expired, or deleted server-side | Run `scripts/tapauth.sh <provider> [scopes]` again to create a fresh approval URL, then retry `--token` |
 | Approval URL not visible | Skipped default mode and went straight to `--token` | Run `scripts/tapauth.sh <provider> [scopes]` (without `--token`) first to get the approval URL, show it to the user, then use `--token`. |
 | `tapauth: timed out` | User didn't approve within 10 minutes | Re-run `scripts/tapauth.sh <provider> [scopes]`; it may reuse the same pending grant and approval URL. If you need a brand-new URL immediately, remove the cached grant file and run it again. |
 

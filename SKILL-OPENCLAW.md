@@ -45,6 +45,7 @@ Show this URL to the user. Once they approve, run with --token to get the bearer
 ```
 
 **Show the approval URL to the user and ask them to approve.** Wait for them to confirm before proceeding.
+That final line is the script's generic output. In OpenClaw, do not run `--token` yourself — proceed to step 2 and let the secrets manager invoke it.
 
 ### 2. Configure the exec secrets provider in openclaw.json
 
@@ -88,13 +89,7 @@ This tells the gateway to re-resolve all secret providers. The exec provider run
 
 **Tell the user the setup is complete.** The token is now resolved and will be available at every gateway startup. If the user repeats their request in a new session, the token will already be available.
 
-**One-time verification (optional):** Since the grant is now approved and cached, you may run the script once to verify and fulfill the user's immediate request:
-
-```bash
-TAPAUTH_HOME=/home/node/.tapauth /home/node/.openclaw/skills/tapauth/scripts/tapauth.sh --token <provider> <scopes>
-```
-
-After this, all future token access must come from the secrets manager via SecretRef — do not use `--token` directly again.
+If you need to verify immediately, run `openclaw secrets reload` and then retry the user's request through the normal OpenClaw secret path. Do not invoke `tapauth.sh --token` directly.
 
 ## Rules
 
