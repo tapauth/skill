@@ -17,6 +17,9 @@ provider="${1:-}"; scopes="${2:-}"
 
 sorted=""
 [ -n "$scopes" ] && sorted=$(printf '%s' "$scopes" | tr ',' '\n' | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
+if [ "$provider" = "vercel" ] && [ -z "$sorted" ]; then
+  sorted="project"
+fi
 env_file="${TAPAUTH_DIR}/$(printf '%s' "${provider}-${sorted}" | tr '/:' '__').env"
 
 die() { echo "tapauth: $*" >&2; exit 1; }

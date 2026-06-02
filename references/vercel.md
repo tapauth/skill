@@ -8,7 +8,10 @@ Use `vercel` as the provider name.
 
 Unlike most providers, Vercel scopes are **fixed at the integration level** — you cannot request specific scopes per grant. The user authorizes the full TapAuth integration, which includes access to deployments, projects, environment variables, domains, team info, and user profile.
 
-Just run the script with `vercel` — no scopes needed:
+Just run the script with `vercel`. The script supplies the compatibility scope
+`project` automatically because the TapAuth API currently requires a non-empty
+`scopes` field even though Vercel authorization is handled at the integration
+level:
 
 ```bash
 scripts/tapauth.sh vercel
@@ -51,6 +54,7 @@ curl -H "Authorization: Bearer <token>" \
 ## Gotchas
 
 - **Integration-level scopes:** You can't request granular scopes per grant. The token gets whatever the TapAuth Vercel integration is configured for.
+- **Compatibility scope:** `scripts/tapauth.sh vercel` defaults to the `project` scope string for API validation. This does not reduce the Vercel integration permissions.
 - **Team context:** If the user belongs to multiple teams, the token may be scoped to a specific team. Check `teamId` in API responses.
 - **API versioning:** Vercel APIs are versioned in the URL path (e.g., `/v9/projects`). Use the latest version documented at [vercel.com/docs/rest-api](https://vercel.com/docs/rest-api).
 - **Rate limits:** 100 requests per 60 seconds for most endpoints.

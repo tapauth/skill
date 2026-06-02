@@ -63,7 +63,7 @@ Run this **right after** showing the URL — do not wait for the user to confirm
 - **No API key or credentials needed.** TapAuth is zero-config. Do not look for API keys, client secrets, or environment variables. Just run the script.
 - **Always use the bundled script.** The script is at `scripts/tapauth.sh` inside this skill. Do NOT download it from the website — you already have it.
 - **Always run default mode first, then `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token. Don't skip to `--token` on first run — the user needs to see and click the approval URL first.
-- **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
+- **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), while Vercel uses a compatibility default and Notion/Slack use integration-level permissions. See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
 - **Approved grants are cached automatically.** After the first approval, default mode detects existing authorization and `--token` can fetch a fresh token immediately. Don't create a new grant when you already have a working cached grant.
 - **Multiple scopes:** Pass comma-separated: `scripts/tapauth.sh google calendar.events,spreadsheets`
 - **OpenClaw agents:** If running under OpenClaw, prefer the exec secrets provider (`references/openclaw.md`) over inline `$(...)` — it resolves tokens at startup and keeps them out of shell commands entirely.
@@ -80,7 +80,7 @@ Most providers require scopes. Some (Vercel, Notion) use integration-level permi
 | Google Sheets | `scripts/tapauth.sh google spreadsheets.readonly` | Use `google` provider with sheets scopes |
 | Google Docs | `scripts/tapauth.sh google documents.readonly` | Use `google` provider with docs scopes |
 | GitHub | `scripts/tapauth.sh github repo` | `repo`, `read:user`, etc. |
-| Vercel | `scripts/tapauth.sh vercel` | Integration-level (no per-grant scopes) |
+| Vercel | `scripts/tapauth.sh vercel` | Integration-level; script defaults to `project` for API validation |
 | Notion | `scripts/tapauth.sh notion` | Integration-level (no per-grant scopes) |
 | Slack | `scripts/tapauth.sh slack users:read` | `users:read`, `channels:read`, etc. |
 | Asana | `scripts/tapauth.sh asana tasks:read` | `tasks:read`, `projects:read`, etc. |
@@ -281,7 +281,7 @@ curl -s https://tapauth.ai/api/v1/providers
 
 - **GitHub:** The `repo` scope grants read/write to repositories. Use `read:user` for profile info only.
 - **Google:** Supports automatic token refresh. Use the `google` provider for all Google services (Calendar, Sheets, Docs, Drive, Gmail, Contacts).
-- **Notion/Vercel:** Scopes are fixed at integration level — no scopes needed in the command.
+- **Notion/Vercel:** Scopes are fixed at integration level. Vercel does not need a scope in the command because the script supplies `project` for API validation.
 - **Slack:** Uses `user_scope` permissions. Specify the scopes you need (e.g., `users:read`, `channels:read`).
 - **Linear:** Requires explicit scopes (`read`, `write`, etc.).
 - **Discord:** User OAuth tokens, not bot tokens. Tokens expire after ~7 days with automatic refresh.
