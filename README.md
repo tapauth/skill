@@ -1,6 +1,6 @@
 # TapAuth Agent Skill
 
-> Delegated access broker for AI agents. One approval flow for OAuth tokens, passwords, and fixed API keys.
+> Delegated access broker for AI agents. One API call to request OAuth access or a user-entered secret.
 
 This is the official [Agent Skill](https://agentskills.io) for [TapAuth](https://tapauth.ai) — the trust layer between humans and AI agents.
 
@@ -16,13 +16,13 @@ Compatible with: **Claude Code** · **Cursor** · **OpenClaw** · **OpenAI Codex
 
 ## What It Does
 
-Gives your AI agent the ability to get OAuth tokens or user-supplied fixed secrets. Instead of hardcoding API keys or passing credentials through chat, TapAuth lets users approve access in their browser with clear request context.
+Gives your AI agent the ability to get OAuth tokens or user-entered passwords/API keys from users. Instead of hardcoding credentials, TapAuth lets users approve access in their browser with clear request context and expiry controls.
 
 ```
-Agent creates grant → User approves in browser → Agent gets approved token or secret
+Agent creates grant → User approves in browser → Agent gets scoped token or secret
 ```
 
-No signup needed. The user's approval is the gate.
+No TapAuth API key needed. No signup needed. The user's approval is the gate.
 
 ## Supported Providers
 
@@ -39,22 +39,17 @@ No signup needed. The user's approval is the gate.
 | Discord | [references/discord.md](references/discord.md) | Guilds, channels, messages, users |
 | Sentry | [references/sentry.md](references/sentry.md) | Error tracking, projects, organizations |
 | Apify | [references/apify.md](references/apify.md) | Actors, web scraping, datasets, automation |
-| Manual Secret | `scripts/tapauth.sh secret "description" "[regex]"` | Passwords, bot tokens, fixed API keys |
+| Manual Secret | Built in | User-entered passwords or fixed API keys |
 
 ## Quick Example
 
-For OpenClaw, do not capture TapAuth tokens into shell variables. Create the grant, then wire the bundled script into the exec secrets provider described in `SKILL.md`.
+### CLI (recommended)
 
 ```bash
-# 1. Create a grant and show the approval URL to the user
-TAPAUTH_HOME=/home/node/.tapauth /home/node/.openclaw/skills/tapauth/scripts/tapauth.sh github repo
-
-# 2. After approval, add the exec provider to ~/.openclaw/openclaw.json
-# 3. Reload secrets so OpenClaw resolves the token in memory
-openclaw secrets reload
+# One command. Token comes back ready to use.
+TOKEN=$(tapauth github repo)
+curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user/repos
 ```
-
-After that, reference the resolved secret from your OpenClaw config or package instead of using `TOKEN=$(...)`.
 
 ### API (v1)
 
@@ -70,21 +65,23 @@ curl https://tapauth.ai/api/v1/grants/{grant_id} \
   -H "Authorization: Bearer gs_..."
 ```
 
-Manual secret request:
+### Manual Secret
 
 ```bash
-curl -X POST https://tapauth.ai/api/v1/grants \
-  -H "Content-Type: application/json" \
-  -d '{"provider": "secret", "secret_description": "OpenAI API key for staging", "validation_regex": "^sk-"}'
+# Ask the user for a fixed API key. The approval page encrypts it in the browser.
+scripts/tapauth.sh secret "Stripe Secret Key" "^sk_" "Use a Stripe secret key that starts with sk_"
+
+# Retrieve it after approval
+scripts/tapauth.sh --token secret "Stripe Secret Key" "^sk_" "Use a Stripe secret key that starts with sk_"
 ```
 
-Secret grant expiry stops TapAuth from returning the secret; it does not rotate or revoke the underlying password or API key.
+Use a short, unique, stable, human-readable description because it is part of the local lookup key. Put formatting instructions in `validation_hint`, not in the description. Validation regexes are checked in the browser as a UX guard. The optional validation hint is shown only when that check fails. Agents should validate the retrieved secret too. Expiry stops TapAuth from returning the secret; it does not rotate or revoke the underlying key.
 
 ## Links
 
-- 🌐 [tapauth.ai](https://tapauth.ai)
-- 📖 [Documentation](https://tapauth.ai/docs)
-- 🔐 [Agent Skills Spec](https://agentskills.io)
+- [tapauth.ai](https://tapauth.ai)
+- [Documentation](https://tapauth.ai/docs)
+- [Agent Skills Spec](https://agentskills.io)
 
 ## License
 

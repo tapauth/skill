@@ -9,8 +9,8 @@ set -euo pipefail
 #
 # Usage:
 #   bash scripts/publish-clawhub.sh [--dry-run]
-#   bash scripts/publish-clawhub.sh --version 1.0.2
-#   bash scripts/publish-clawhub.sh --version 1.0.2 --changelog "Fixed exec provider config"
+#   bash scripts/publish-clawhub.sh --version 1.0.5
+#   bash scripts/publish-clawhub.sh --version 1.0.5 --changelog "Canonical CLI sync"
 ###############################################################################
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,18 +44,13 @@ if [[ ! -f "$SKILL_DIR/SKILL.md" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$SKILL_DIR/scripts/stage-clawhub.sh" ]]; then
-  echo "FATAL: stage-clawhub.sh not found in $SKILL_DIR/scripts"
-  exit 1
-fi
-
-if [[ ! -f "$SKILL_DIR/scripts/lint-clawhub-package.sh" ]]; then
-  echo "FATAL: lint-clawhub-package.sh not found in $SKILL_DIR/scripts"
-  exit 1
-fi
-
-if [[ "$DRY_RUN" != "true" ]] && ! command -v clawhub &>/dev/null; then
-  echo "FATAL: clawhub CLI not found. Install it first."
+CLAWHUB_CMD=()
+if command -v clawhub &>/dev/null; then
+  CLAWHUB_CMD=(clawhub)
+elif command -v npx &>/dev/null; then
+  CLAWHUB_CMD=(npx -y clawhub@latest)
+elif [[ "$DRY_RUN" != "true" ]]; then
+  echo "FATAL: clawhub CLI not found and npx is unavailable."
   exit 1
 fi
 
@@ -67,9 +62,14 @@ echo "Staging skill for ClawHub..."
 echo "  Source: $SKILL_DIR"
 echo "  Staging: $TMP_DIR"
 
-bash "$SKILL_DIR/scripts/stage-clawhub.sh" "$TMP_DIR"
-bash "$SKILL_DIR/scripts/lint-clawhub-package.sh" "$TMP_DIR"
-echo "  Prepared publish artifact"
+# Copy everything
+cp -r "$SKILL_DIR"/* "$TMP_DIR/"
+
+# Swap SKILL-OPENCLAW.md → SKILL.md
+cp "$TMP_DIR/SKILL-OPENCLAW.md" "$TMP_DIR/SKILL.md"
+rm "$TMP_DIR/SKILL-OPENCLAW.md"
+
+echo "  Swapped SKILL-OPENCLAW.md → SKILL.md"
 
 # Verify the swap worked
 if grep -q "OpenClaw Secrets Manager" "$TMP_DIR/SKILL.md"; then
@@ -95,7 +95,7 @@ else
   echo ""
   echo "Publishing to ClawHub..."
 
-  PUBLISH_ARGS=(clawhub publish "$TMP_DIR/" --slug tapauth --name "TapAuth")
+  PUBLISH_ARGS=("${CLAWHUB_CMD[@]}" publish "$TMP_DIR/" --slug tapauth --name "TapAuth")
   [[ -n "$VERSION" ]] && PUBLISH_ARGS+=(--version "$VERSION")
   [[ -n "$CHANGELOG" ]] && PUBLISH_ARGS+=(--changelog "$CHANGELOG")
 

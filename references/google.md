@@ -58,13 +58,26 @@ curl -X POST \
 
 To add events to a calendar by name, request calendar discovery and event write scopes together. `calendar.events` alone can insert events, but it cannot call `calendarList.list` to find a calendar ID by name.
 
-Use `["--token", "google", "calendar.events,calendar.calendarlist.readonly"]` in the exec provider config from `SKILL.md`.
+```bash
+# 1. Get approval for both discovery and event writes
+scripts/tapauth.sh google calendar.events,calendar.calendarlist.readonly
 
-After approval and `openclaw secrets reload`, use the resolved secret to:
+# 2. Start the real operation immediately; --token polls until the user approves
+CALENDAR_ID="$(curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.events,calendar.calendarlist.readonly)" \
+  "https://www.googleapis.com/calendar/v3/users/me/calendarList" \
+  | jq -r '.items[] | select(.summary == "Charlie & Sam") | .id' | head -n 1)"
+test -n "$CALENDAR_ID" || { echo "Calendar not found: Charlie & Sam" >&2; exit 1; }
 
-- Call `GET https://www.googleapis.com/calendar/v3/users/me/calendarList`
-- Select the calendar ID whose `summary` matches the requested calendar name
-- Call `POST https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events`
+curl -X POST \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.events,calendar.calendarlist.readonly)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Team standup",
+    "start": {"dateTime": "YYYY-MM-DDT09:00:00Z"},
+    "end":   {"dateTime": "YYYY-MM-DDT09:30:00Z"}
+  }' \
+  "https://www.googleapis.com/calendar/v3/calendars/${CALENDAR_ID}/events"
+```
 
 If the narrower pair is not available or does not cover the workflow, request full Calendar access with `scripts/tapauth.sh google calendar`.
 

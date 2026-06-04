@@ -1,18 +1,10 @@
 # Changelog
 
-## [1.0.4] - 2026-06-03
+## [1.0.5] - 2026-06-03
 
-- Feature: add manual secret grants for user-supplied passwords, bot tokens, and fixed API keys
-- Fix: preserve expired grants for re-authorization instead of discarding their approval links
-- Docs: clarify the immediate polling flow after approval URLs and keep OpenClaw examples on the exec secrets provider path
-- Packaging: keep ClawHub staging and lint checks in the published skill package workflow
-
-## [1.0.3] - 2026-04-16
-
-- Security: cache only grant credentials on disk and reuse approved grants without reissuing tokens locally
-- Fix: distinguish expired grants from revoked or deleted grants so agents can re-authorize in place
-- Docs: align raw API examples with `approval_url` and tighten OpenClaw publish guidance
-- Packaging: validate the exact staged ClawHub package before publishing and scan the staged artifact in CI
+- Fix: align the bundled `scripts/tapauth.sh` with the canonical TapAuth CLI served from `https://tapauth.ai/cli/tapauth`
+- Tooling: add CI validation so the monorepo fails when the bundled script drifts from the canonical CLI
+- Packaging: include the CLI checker and OpenClaw publish script in the public skill sync allowlist
 
 ## [1.0.2] - 2026-03-27
 
