@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: tapauth-cli-matches-canonical
+        name: tapauth.sh matches https://tapauth.ai/cli/tapauth
+        entry: scripts/check-tapauth-cli.sh
+        language: script
+        pass_filenames: false
+        files: ^scripts/tapauth\.sh$
