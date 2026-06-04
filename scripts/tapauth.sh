@@ -11,12 +11,19 @@ mkdir -p "$TAPAUTH_DIR" && chmod 700 "$TAPAUTH_DIR"
 mode="url"
 [ "${1:-}" = "--token" ] && { mode="token"; shift; }
 
-provider="${1:-}"; scopes="${2:-}"
-[ -z "$provider" ] && { echo "usage: tapauth [--token] <provider> [scopes]" >&2; exit 1; }
+provider="${1:-}"; scopes="${2:-}"; validation_regex="${3:-}"
+[ -z "$provider" ] && { echo "usage: tapauth [--token] <provider> [scopes]" >&2; echo "       tapauth [--token] secret <description> [validation_regex]" >&2; exit 1; }
 [[ "$provider" =~ ^[a-z][a-z0-9_]*$ ]] || { echo "tapauth: invalid provider name" >&2; exit 1; }
 
 sorted=""
-[ -n "$scopes" ] && sorted=$(printf '%s' "$scopes" | tr ',' '\n' | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
+secret_description=""
+if [ "$provider" = "secret" ]; then
+  secret_description="$scopes"
+  [ -n "$secret_description" ] || { echo "usage: tapauth [--token] secret <description> [validation_regex]" >&2; exit 1; }
+  sorted=$(printf '%s' "${secret_description}-${validation_regex}" | tr -c 'A-Za-z0-9_.-' '_' | cut -c1-80)
+else
+  [ -n "$scopes" ] && sorted=$(printf '%s' "$scopes" | tr ',' '\n' | LC_ALL=C sort -u | tr '\n' ',' | sed 's/,$//')
+fi
 env_file="${TAPAUTH_DIR}/$(printf '%s' "${provider}-${sorted}" | tr '/:' '__').env"
 
 die() { echo "tapauth: $*" >&2; exit 1; }
@@ -36,7 +43,7 @@ parse_env_response() {
 }
 
 ready() {
-  [ "$mode" = "url" ] && { echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to get the bearer token."; exit 0; }
+  [ "$mode" = "url" ] && { echo "Already authorized for ${provider}${sorted:+ ($sorted)}. Use --token to retrieve it."; exit 0; }
   [ -n "${TAPAUTH_TOKEN:-}" ] || die "no token in response"
   echo "${TAPAUTH_TOKEN:-}"; exit 0
 }
@@ -64,7 +71,12 @@ create_grant() {
   TAPAUTH_GRANT_ID="" TAPAUTH_GRANT_SECRET="" TAPAUTH_APPROVE_URL=""
   create_args=(curl --silent --show-error -w "\n%{http_code}" -X POST -H 'Accept: text/plain'
     --data-urlencode "provider=${provider}")
-  [ -n "$sorted" ] && create_args+=(--data-urlencode "scopes=${sorted}")
+  if [ "$provider" = "secret" ]; then
+    create_args+=(--data-urlencode "secret_description=${secret_description}")
+    [ -n "$validation_regex" ] && create_args+=(--data-urlencode "validation_regex=${validation_regex}")
+  else
+    [ -n "$sorted" ] && create_args+=(--data-urlencode "scopes=${sorted}")
+  fi
   [ -n "${TAPAUTH_AGENT_NAME:-}" ] && create_args+=(--data-urlencode "agent_name=${TAPAUTH_AGENT_NAME}")
   create_args+=("${TAPAUTH_BASE}/api/v1/grants")
   local resp
@@ -82,9 +94,9 @@ emit_url() {
   echo "Approve access: ${TAPAUTH_APPROVE_URL:-${TAPAUTH_BASE}/approve/${TAPAUTH_GRANT_ID}}"
   echo ""
   if [ "${TAPAUTH_STATUS:-}" = "expired" ]; then
-    echo "Show this URL to the user. Once they re-authorize, run with --token to get the bearer token."
+    echo "Show this URL to the user. Once they re-authorize, run with --token to retrieve it."
   else
-    echo "Show this URL to the user. Once they approve, run with --token to get the bearer token."
+    echo "Show this URL to the user. Once they approve, run with --token to retrieve it."
   fi
   exit 0
 }

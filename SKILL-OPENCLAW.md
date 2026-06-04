@@ -1,10 +1,10 @@
 ---
 name: tapauth
 description: >-
-  OAuth token provider for OpenClaw agents — Google Calendar, Gmail, GitHub, Slack, Linear, Notion,
-  Vercel, Sentry, Asana, Discord, or Apify. Integrates with OpenClaw's exec secrets provider so
-  tokens are resolved at startup and held in memory — no shell commands or inline credentials needed
-  at runtime. Configure once in openclaw.json, reference tokens via SecretRef.
+  Delegated access provider for OpenClaw agents — OAuth tokens for Google Calendar, Gmail, GitHub,
+  Slack, Linear, Notion, Vercel, Sentry, Asana, Discord, or Apify, plus user-supplied passwords
+  or fixed API keys through the special secret provider. Integrates with OpenClaw's exec secrets
+  provider so approved values are resolved at startup and held in memory.
 license: MIT
 compatibility: Requires curl and bash. Designed for OpenClaw's exec secrets provider.
 metadata:
@@ -14,13 +14,13 @@ metadata:
   docs: https://tapauth.ai/docs
 ---
 
-# TapAuth — OAuth Tokens via OpenClaw Secrets Manager
+# TapAuth — Delegated Access via OpenClaw Secrets Manager
 
-TapAuth provides OAuth tokens through OpenClaw's exec secrets provider. Tokens are resolved at gateway startup and held in memory — they never appear in shell commands or config files as plaintext.
+TapAuth provides OAuth tokens and approved fixed secrets through OpenClaw's exec secrets provider. Values are resolved at gateway startup and held in memory — they never appear in shell commands or config files as plaintext.
 
-**You must NEVER use `tapauth.sh --token` directly in shell commands, curl calls, or `$(...)` substitutions.** Tokens are always resolved through the secrets manager. Your job as an agent is to configure the secrets provider, not to fetch tokens yourself.
+**You must NEVER use `tapauth.sh --token` directly in shell commands, curl calls, or `$(...)` substitutions.** Approved values are always resolved through the secrets manager. Your job as an agent is to configure the secrets provider, not to fetch tokens or secrets yourself.
 
-## When a user asks you to do something that needs an OAuth token
+## When a user asks you to do something that needs delegated access
 
 Follow these steps **in order**. Do not skip to step 3. Do not run `--token` yourself.
 
@@ -41,7 +41,7 @@ Output:
 ```text
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to get the bearer token.
+Show this URL to the user. Once they approve, run with --token to retrieve it.
 ```
 
 **Show the approval URL to the user and ask them to approve.** Wait for them to confirm before proceeding.
@@ -87,7 +87,7 @@ openclaw secrets reload
 
 This tells the gateway to re-resolve all secret providers. The exec provider runs `tapauth.sh --token` in the background and stores the result in the in-memory secrets snapshot.
 
-**Tell the user the setup is complete.** The token is now resolved and will be available at every gateway startup. If the user repeats their request in a new session, the token will already be available.
+**Tell the user the setup is complete.** The approved value is now resolved and will be available at every gateway startup. If the user repeats their request in a new session, it will already be available.
 
 If you need to verify immediately, run `openclaw secrets reload` and then retry the user's request through the normal OpenClaw secret path. Do not invoke `tapauth.sh --token` directly.
 
@@ -95,7 +95,9 @@ If you need to verify immediately, run `openclaw secrets reload` and then retry 
 
 - **NEVER run `tapauth.sh --token` directly.** Do not use it in `$(...)`, do not capture its output, do not pipe it to curl. The secrets manager runs it for you.
 - **NEVER skip the approval step.** Always create the grant first (step 1), get user approval, then configure the provider (step 2).
-- **No API key or credentials needed.** TapAuth is zero-config. Do not look for API keys, client secrets, or environment variables.
+- **OAuth is zero-config.** Do not look for OAuth client secrets or provider environment variables.
+- **Manual secrets use `secret`.** Use args like `["--token", "secret", "OpenAI API key for staging", "^sk-"]`.
+- **Secret expiry is TapAuth-side only.** When a fixed secret grant expires, TapAuth stops returning it, but the underlying password/API key remains valid until the user rotates or revokes it at the source.
 - **Always use absolute paths** for the `command` field in the exec provider config.
 
 ## Quick Reference — Provider + Scopes
@@ -115,6 +117,7 @@ If you need to verify immediately, run `openclaw secrets reload` and then retry 
 | Sentry | `["--token", "sentry", "project:read"]` | `references/sentry.md` |
 | Discord | `["--token", "discord", "identify"]` | `references/discord.md` |
 | Apify | `["--token", "apify", "full_api_access"]` | `references/apify.md` |
+| Manual Secret | `["--token", "secret", "OpenAI API key for staging", "^sk-"]` | Description required; regex optional |
 
 Multiple scopes: comma-separate in a single string, e.g. `["--token", "google", "calendar.readonly,drive.readonly"]`.
 

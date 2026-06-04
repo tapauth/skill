@@ -7,8 +7,10 @@ Use the Google scope name without the URL prefix. Full URLs also work.
 | Scope | Access | Full URL |
 |-------|--------|----------|
 | `calendar.readonly` | Read calendar events | `https://www.googleapis.com/auth/calendar.readonly` |
-| `calendar.events` | Full calendar access | `https://www.googleapis.com/auth/calendar.events` |
+| `calendar.events` | Create/edit/delete events in calendars where the calendar ID is already known; does not list calendars by name | `https://www.googleapis.com/auth/calendar.events` |
 | `calendar.events.readonly` | Read calendar events (events-only) | `https://www.googleapis.com/auth/calendar.events.readonly` |
+| `calendar.calendarlist.readonly` | List the user's calendars and calendar IDs | `https://www.googleapis.com/auth/calendar.calendarlist.readonly` |
+| `calendar` | Full Google Calendar access; use when the workflow needs both discovery and writes and narrower scopes are insufficient | `https://www.googleapis.com/auth/calendar` |
 | `spreadsheets.readonly` | Read Google Sheets | `https://www.googleapis.com/auth/spreadsheets.readonly` |
 | `spreadsheets` | Full Sheets access | `https://www.googleapis.com/auth/spreadsheets` |
 | `documents.readonly` | Read Google Docs | `https://www.googleapis.com/auth/documents.readonly` |
@@ -37,7 +39,7 @@ curl -H "Authorization: Bearer <token>" \
 ## Example: Create Calendar Event
 
 ```bash
-# 1. Get a token with write scope
+# 1. Get approval for event write scope when the calendar ID is already known
 scripts/tapauth.sh google calendar.events
 
 # 2. Create an event (replace YYYY-MM-DD with a future date)
@@ -52,11 +54,25 @@ curl -X POST \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 ```
 
+## Example: Create Calendar Event by Calendar Name
+
+To add events to a calendar by name, request calendar discovery and event write scopes together. `calendar.events` alone can insert events, but it cannot call `calendarList.list` to find a calendar ID by name.
+
+Use `["--token", "google", "calendar.events,calendar.calendarlist.readonly"]` in the exec provider config from `SKILL.md`.
+
+After approval and `openclaw secrets reload`, use the resolved secret to:
+
+- Call `GET https://www.googleapis.com/calendar/v3/users/me/calendarList`
+- Select the calendar ID whose `summary` matches the requested calendar name
+- Call `POST https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events`
+
+If the narrower pair is not available or does not cover the workflow, request full Calendar access with `scripts/tapauth.sh google calendar`.
+
 ## Example: Multiple Scopes
 
 ```bash
 # Comma-separated (required format)
-scripts/tapauth.sh google calendar.events,spreadsheets
+scripts/tapauth.sh google calendar.events,calendar.calendarlist.readonly
 ```
 
 ## Gotchas
@@ -65,14 +81,17 @@ scripts/tapauth.sh google calendar.events,spreadsheets
 - **Token refresh:** Google access tokens expire after ~1 hour. TapAuth handles refresh automatically — just call the token endpoint again to get a fresh token.
 - **Unverified app warning:** Users may see a "This app isn't verified" screen. They can click "Advanced" → "Go to TapAuth" to proceed.
 - **Readonly preference:** Always prefer read-only scope variants unless you need write access. Higher approval rate.
-- **Multiple scopes:** Pass as comma-separated: `spreadsheets.readonly,calendar.readonly`
+- **Workflow-based scopes:** Request every scope needed for the whole workflow up front. Discovery-plus-write tasks often need one read/list scope and one mutation scope.
+- **Multiple scopes:** Pass as comma-separated: `calendar.events,calendar.calendarlist.readonly`
 
 ## Recommended Minimum Scopes
 
 | Use Case | Scopes |
 |----------|--------|
 | Read calendar | `calendar.readonly` |
-| Read + write calendar | `calendar.events` |
+| Create/edit events when calendar ID is known | `calendar.events` |
+| Add event to calendar by name | `calendar.events,calendar.calendarlist.readonly` |
+| Full Calendar access | `calendar` |
 | Read spreadsheet | `spreadsheets.readonly` |
 | Read document | `documents.readonly` |
-| Full workspace | `calendar.events`, `spreadsheets`, `documents` |
+| Full workspace | `calendar`, `spreadsheets`, `documents` |

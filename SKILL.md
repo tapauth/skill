@@ -1,11 +1,10 @@
 ---
 name: tapauth
 description: >-
-  Use when you need an OAuth token for a user's account — Google Calendar, Gmail, GitHub, Slack,
-  Linear, Notion, Vercel, Sentry, Asana, Discord, or Apify. No API key or credentials needed. No setup.
-  Just run the bundled script and it handles everything: grant creation, user approval, token
-  caching, and automatic refresh. Do NOT use for API key-based services, bot tokens, or when you
-  already have direct credentials.
+  Use when you need delegated access from a user: OAuth tokens for Google Calendar, Gmail, GitHub,
+  Slack, Linear, Notion, Vercel, Sentry, Asana, Discord, or Apify, or a user-supplied password,
+  bot token, or fixed API key. Run the bundled script to create an approval request, let the user
+  approve in the browser, then retrieve the approved token or secret.
 license: MIT
 compatibility: Requires curl and bash. Works with Claude Code, Cursor, OpenClaw, Codex, GitHub Copilot, and any agent with shell access.
 metadata:
@@ -17,8 +16,8 @@ metadata:
 
 # TapAuth — Delegated Access for AI Agents
 
-TapAuth lets your agent get OAuth tokens from users without handling credentials directly.
-The user approves in their browser. You get a scoped token. That's it.
+TapAuth lets your agent request delegated access from users without asking them to paste secrets into chat.
+The user approves in their browser. You get an OAuth token or an approved fixed secret. That's it.
 
 ## How It Works
 
@@ -30,11 +29,17 @@ This skill includes a CLI script at `scripts/tapauth.sh` with two modes:
 scripts/tapauth.sh google calendar.readonly
 ```
 
+For a fixed secret such as an API key or password, use the special `secret` provider. The second argument is the description shown to the user, and the optional third argument is a validation regex:
+
+```bash
+scripts/tapauth.sh secret "OpenAI API key for staging" "^sk-"
+```
+
 This creates a grant and prints the approval URL to stdout:
 ```
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to get the bearer token.
+Show this URL to the user. Once they approve, run with --token to retrieve the approved token or secret.
 ```
 
 **Show the URL to the user.** They must click it, sign in, and approve. This command exits immediately — it does not block or poll.
@@ -46,11 +51,13 @@ curl -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.read
   "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 ```
 
-Run this **right after** showing the URL — do not wait for the user to confirm they approved. The `--token` flag polls automatically (every 5 seconds, up to 10 minutes) until the user approves, then outputs the bearer token to stdout. The `$(...)` substitution feeds it directly into curl.
+Run this **right after** showing the URL — do not wait for the user to confirm they approved, and do not end the turn after sending the link. The `--token` flag is the polling step: it waits automatically (every 5 seconds, up to 10 minutes) until the user approves, then outputs the bearer token or approved secret to stdout. The `$(...)` substitution feeds it directly into curl.
 
-**Always use `--token` inline with `$(...)`.** Do NOT capture the token into a shell variable like `TOKEN=$(...)`. The inline pattern keeps the token out of shell history and process listings.
+If the API operation may run longer than the foreground execution limit, start the same polling/API command as a tracked background process and inspect its output when it completes. The important rule is unchanged: after showing the approval URL, immediately start the real API operation with inline `$(scripts/tapauth.sh --token <provider> <scopes>)`.
 
-**On subsequent runs,** the cached grant is reused. Default mode prints "Already authorized", and `--token` fetches a fresh bearer token immediately.
+**Always use `--token` inline with `$(...)`.** Do NOT capture the token or secret into a shell variable like `TOKEN=$(...)`. The inline pattern keeps it out of shell history and process listings.
+
+**On subsequent runs,** the cached grant is reused. Default mode prints "Already authorized", and `--token` fetches a fresh bearer token or approved secret immediately.
 
 > **⚠️ IMPORTANT: Always run default mode first on first use with a provider.**
 >
@@ -60,10 +67,13 @@ Run this **right after** showing the URL — do not wait for the user to confirm
 
 ## Gotchas
 
-- **No API key or credentials needed.** TapAuth is zero-config. Do not look for API keys, client secrets, or environment variables. Just run the script.
+- **OAuth is zero-config.** Do not look for OAuth client secrets or provider environment variables. Just run the script.
+- **Manual secrets are allowed through `secret`.** Use this only when the service requires a password, bot token, or fixed API key that OAuth cannot provide.
+- **Secret expiry is TapAuth-side only.** When a fixed secret grant expires, TapAuth stops returning it, but the underlying password/API key remains valid until the user rotates or revokes it at the source.
 - **Always use the bundled script.** The script is at `scripts/tapauth.sh` inside this skill. Do NOT download it from the website — you already have it.
-- **Always run default mode first, then `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token. Don't skip to `--token` on first run — the user needs to see and click the approval URL first.
+- **Always run default mode first, then immediately start the real API command with `--token`.** Default mode prints the approval URL to stdout and exits. `--token` mode polls and returns the bearer token or approved secret. Don't skip to `--token` on first run, and don't stop after showing the approval URL — the user approves while `--token` is already polling.
 - **Scopes are provider-specific.** Some providers need them (Google, GitHub, Linear), others don't (Vercel, Notion, Slack). See the Quick Reference table below. Check the provider's reference file (e.g. `references/google.md`) for valid scope values.
+- **Plan scopes for the whole workflow.** If a task needs discovery plus mutation, request both scopes up front. Example: adding events to a Google Calendar by name requires calendar-list read access to find the calendar ID plus event write access to insert the event.
 - **Approved grants are cached automatically.** After the first approval, default mode detects existing authorization and `--token` can fetch a fresh token immediately. Don't create a new grant when you already have a working cached grant.
 - **Multiple scopes:** Pass comma-separated: `scripts/tapauth.sh google calendar.events,spreadsheets`
 - **OpenClaw agents:** If running under OpenClaw, prefer the exec secrets provider (`references/openclaw.md`) over inline `$(...)` — it resolves tokens at startup and keeps them out of shell commands entirely.
@@ -75,7 +85,9 @@ Most providers require scopes. Some (Vercel, Notion) use integration-level permi
 | Provider | Command | Scopes |
 |----------|---------|--------|
 | Google Calendar (read) | `scripts/tapauth.sh google calendar.readonly` | See `references/google.md` |
-| Google Calendar (read/write) | `scripts/tapauth.sh google calendar.events` | See `references/google.md` |
+| Google Calendar (events by known ID) | `scripts/tapauth.sh google calendar.events` | Create/edit/delete events when the calendar ID is already known |
+| Google Calendar (add by name) | `scripts/tapauth.sh google calendar.events,calendar.calendarlist.readonly` | List calendars by name, then create/edit/delete events |
+| Google Calendar (full) | `scripts/tapauth.sh google calendar` | Full Calendar access when narrower scopes do not cover the workflow |
 | Google Drive | `scripts/tapauth.sh google drive.readonly` | See `references/google.md` |
 | Google Sheets | `scripts/tapauth.sh google spreadsheets.readonly` | Use `google` provider with sheets scopes |
 | Google Docs | `scripts/tapauth.sh google documents.readonly` | Use `google` provider with docs scopes |
@@ -88,6 +100,7 @@ Most providers require scopes. Some (Vercel, Notion) use integration-level permi
 | Sentry | `scripts/tapauth.sh sentry project:read` | `org:read`, `project:read`, etc. |
 | Discord | `scripts/tapauth.sh discord identify` | `identify`, `guilds`, etc. |
 | Apify | `scripts/tapauth.sh apify full_api_access` | `full_api_access` |
+| Manual Secret | `scripts/tapauth.sh secret "OpenAI API key for staging" "^sk-"` | Description required; regex optional |
 
 **Key rule:** Always specify the scopes you need. Check the provider's reference file for valid scope values.
 
@@ -99,9 +112,16 @@ The pattern is always the same — **default mode first, then `--token`:**
 # 1. Get the approval URL (show it to the user)
 scripts/tapauth.sh <provider> [scopes]
 
-# 2. Use the token
+# 2. Use the token or approved secret
 curl -H "Authorization: Bearer $(scripts/tapauth.sh --token <provider> [scopes])" \
   <api-url>
+```
+
+For manual secrets, repeat the same description and regex so the script finds the cached grant:
+
+```bash
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token secret 'OpenAI API key for staging' '^sk-')" \
+  https://api.example.com/v1/tasks
 ```
 
 For requests that need a body:
@@ -114,7 +134,7 @@ curl -X POST \
   <api-url>
 ```
 
-For multiple requests, repeat the `$(...)` inline pattern — the cached grant is reused so each call returns immediately after fetching a fresh token:
+For multiple requests, repeat the `$(...)` inline pattern — the cached grant is reused so each call returns immediately after fetching a fresh token or approved secret:
 
 ```bash
 curl -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
@@ -126,7 +146,7 @@ curl -X POST -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)
   "https://api.github.com/repos/owner/repo/issues"
 ```
 
-Do NOT store the token in a shell variable — the inline `$(...)` pattern is both simpler and more secure.
+Do NOT store the token or secret in a shell variable — the inline `$(...)` pattern is both simpler and more secure.
 
 ## First-Run Flow
 
@@ -134,13 +154,14 @@ On first use with a provider:
 
 1. Run `scripts/tapauth.sh <provider> [scopes]` (default mode) — creates a grant, prints the approval URL, exits immediately.
 2. **Show the approval URL to the user.**
-3. Immediately run your `curl` with `$(scripts/tapauth.sh --token <provider> [scopes])` — it polls automatically until the user approves, then returns the bearer token.
+3. Immediately run your real API operation with `$(scripts/tapauth.sh --token <provider> [scopes])` — this is the polling step. It waits automatically until the user approves, then returns the bearer token or approved secret.
+4. Do not end the turn while waiting for approval. If foreground execution may time out, run the polling/API command as a tracked background process and inspect the result when it completes.
 
 Example default-mode output:
 ```
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to get the bearer token.
+Show this URL to the user. Once they approve, run with --token to retrieve the approved token or secret.
 ```
 
 Example `--token` mode (polling):
@@ -173,6 +194,27 @@ curl -s -X POST \
     "end":   {"dateTime": "YYYY-MM-DDT09:30:00Z"}
   }' \
   "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+```
+
+### Create a Google Calendar event by calendar name
+
+Use both scopes because `calendar.events` can create events but cannot list calendars by name:
+
+```bash
+CALENDAR_ID="$(curl -s -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.events,calendar.calendarlist.readonly)" \
+  "https://www.googleapis.com/calendar/v3/users/me/calendarList" \
+  | jq -r '.items[] | select(.summary == "Charlie & Sam") | .id' | head -n 1)"
+test -n "$CALENDAR_ID" || { echo "Calendar not found: Charlie & Sam" >&2; exit 1; }
+
+curl -s -X POST \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token google calendar.events,calendar.calendarlist.readonly)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary": "Team standup",
+    "start": {"dateTime": "YYYY-MM-DDT09:00:00Z"},
+    "end":   {"dateTime": "YYYY-MM-DDT09:30:00Z"}
+  }' \
+  "https://www.googleapis.com/calendar/v3/calendars/${CALENDAR_ID}/events"
 ```
 
 ### Read a GitHub repo's issues
@@ -342,7 +384,7 @@ See the [API docs](https://tapauth.ai/docs) for full details on request/response
 
 ## OpenClaw Secrets Provider
 
-TapAuth integrates with OpenClaw's exec secrets provider. Configure one provider entry per grant — each runs `scripts/tapauth.sh --token` and returns a raw bearer token on stdout.
+TapAuth integrates with OpenClaw's exec secrets provider. Configure one provider entry per grant — each runs `scripts/tapauth.sh --token` and returns a raw OAuth token or approved secret on stdout.
 
 Example provider config (one entry per provider/scope combo):
 

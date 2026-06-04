@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4] - 2026-06-03
+
+- Feature: add manual secret grants for user-supplied passwords, bot tokens, and fixed API keys
+- Fix: preserve expired grants for re-authorization instead of discarding their approval links
+- Docs: clarify the immediate polling flow after approval URLs and keep OpenClaw examples on the exec secrets provider path
+- Packaging: keep ClawHub staging and lint checks in the published skill package workflow
+
 ## [1.0.3] - 2026-04-16
 
 - Security: cache only grant credentials on disk and reuse approved grants without reissuing tokens locally

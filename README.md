@@ -1,6 +1,6 @@
 # TapAuth Agent Skill
 
-> Delegated access broker for AI agents. One API call to connect any OAuth provider.
+> Delegated access broker for AI agents. One approval flow for OAuth tokens, passwords, and fixed API keys.
 
 This is the official [Agent Skill](https://agentskills.io) for [TapAuth](https://tapauth.ai) — the trust layer between humans and AI agents.
 
@@ -16,13 +16,13 @@ Compatible with: **Claude Code** · **Cursor** · **OpenClaw** · **OpenAI Codex
 
 ## What It Does
 
-Gives your AI agent the ability to get OAuth tokens from users. Instead of hardcoding API keys or passing credentials, TapAuth lets users approve access in their browser with granular scope control.
+Gives your AI agent the ability to get OAuth tokens or user-supplied fixed secrets. Instead of hardcoding API keys or passing credentials through chat, TapAuth lets users approve access in their browser with clear request context.
 
 ```
-Agent creates grant → User approves in browser → Agent gets scoped token
+Agent creates grant → User approves in browser → Agent gets approved token or secret
 ```
 
-No API key needed. No signup needed. The user's approval is the only gate.
+No signup needed. The user's approval is the gate.
 
 ## Supported Providers
 
@@ -39,6 +39,7 @@ No API key needed. No signup needed. The user's approval is the only gate.
 | Discord | [references/discord.md](references/discord.md) | Guilds, channels, messages, users |
 | Sentry | [references/sentry.md](references/sentry.md) | Error tracking, projects, organizations |
 | Apify | [references/apify.md](references/apify.md) | Actors, web scraping, datasets, automation |
+| Manual Secret | `scripts/tapauth.sh secret "description" "[regex]"` | Passwords, bot tokens, fixed API keys |
 
 ## Quick Example
 
@@ -68,6 +69,16 @@ curl -X POST https://tapauth.ai/api/v1/grants \
 curl https://tapauth.ai/api/v1/grants/{grant_id} \
   -H "Authorization: Bearer gs_..."
 ```
+
+Manual secret request:
+
+```bash
+curl -X POST https://tapauth.ai/api/v1/grants \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "secret", "secret_description": "OpenAI API key for staging", "validation_regex": "^sk-"}'
+```
+
+Secret grant expiry stops TapAuth from returning the secret; it does not rotate or revoke the underlying password or API key.
 
 ## Links
 
