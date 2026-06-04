@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.5] - 2026-06-03
+
+- Fix: align the bundled `scripts/tapauth.sh` with the canonical TapAuth CLI served from `https://tapauth.ai/cli/tapauth`
+- Tooling: add a pre-commit hook and CI validation step that fail when the bundled script drifts from the canonical CLI
+
 ## [1.0.4] - 2026-06-03
 
 - Feature: add manual secret grants for user-supplied passwords, bot tokens, and fixed API keys
