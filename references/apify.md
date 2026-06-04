@@ -6,18 +6,26 @@
 |-------|--------|
 | `full_api_access` | Full access to the Apify API (actors, runs, datasets, key-value stores, schedules) |
 
-## OpenClaw Provider Args
+## Example: Run an Apify Actor
 
-Use `["--token", "apify", "full_api_access"]` in the exec provider config from `SKILL.md`.
+```bash
+# 1. Get a token with full_api_access scope
+scripts/tapauth.sh apify full_api_access
 
-## Example API Targets
+# 2. Run a web scraper actor
+curl -X POST \
+  -H "Authorization: Bearer $(scripts/tapauth.sh --token apify full_api_access)" \
+  -H "Content-Type: application/json" \
+  -d '{"startUrls": [{"url": "https://example.com"}]}' \
+  "https://api.apify.com/v2/acts/apify~web-scraper/runs?waitForFinish=60"
+```
 
-Once the secret is resolved by OpenClaw, use it to call the Apify API. Common endpoints:
+## Example: Get User Info
 
-- `POST https://api.apify.com/v2/acts/apify~web-scraper/runs?waitForFinish=60`
-- `GET https://api.apify.com/v2/users/me`
-
-Do not inline `tapauth.sh --token` in `curl` commands for the published OpenClaw skill.
+```bash
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token apify full_api_access)" \
+  "https://api.apify.com/v2/users/me"
+```
 
 ## Gotchas
 
