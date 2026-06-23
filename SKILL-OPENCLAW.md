@@ -47,14 +47,14 @@ Output:
 ```text
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to retrieve the value.
+Show this URL to the user, then start --token immediately; it waits until approval completes.
 ```
 
-**Show the approval URL to the user and ask them to approve.** Wait for them to confirm before proceeding.
+**Show the approval URL to the user, then proceed immediately.** Do not ask the user to reply "done." The exec secrets provider will run `tapauth.sh --token` and wait while the user approves in the browser.
 
 ### 2. Configure the exec secrets provider in openclaw.json
 
-After the user confirms they approved, **edit `~/.openclaw/openclaw.json`** to add an exec provider under `secrets.providers`:
+Immediately after sharing the approval URL, **edit `~/.openclaw/openclaw.json`** to add an exec provider under `secrets.providers`:
 
 ```json
 {
@@ -83,7 +83,9 @@ After the user confirms they approved, **edit `~/.openclaw/openclaw.json`** to a
 
 Use the naming convention `tapauth_<provider>` or `tapauth_<provider>_<scope>` for the provider key.
 
-### 3. Reload secrets and confirm
+Add a matching SecretRef wherever the OpenClaw config field accepts secrets for the user's task. The SecretRef must use the provider key above and `id: "value"`.
+
+### 3. Reload secrets while the user approves
 
 After editing `openclaw.json`, run:
 
@@ -91,9 +93,9 @@ After editing `openclaw.json`, run:
 openclaw secrets reload
 ```
 
-This tells the gateway to re-resolve all secret providers. The exec provider runs `tapauth.sh --token` in the background and stores the result in the in-memory secrets snapshot.
+This tells the gateway to re-resolve referenced secrets. When a SecretRef points at the TapAuth provider, the exec provider runs `tapauth.sh --token` in the background and stores the result in the in-memory secrets snapshot.
 
-**Tell the user the setup is complete.** The token is now resolved and will be available at every gateway startup. If the user repeats their request in a new session, the token will already be available.
+Run this immediately after sending the approval URL. If approval is still pending, the command waits up to 10 minutes; keep the process running or track it as a background command. Once it completes, fulfill the user's original request without requiring a separate confirmation message.
 
 **One-time verification (optional):** Since the grant is now approved and cached, you may run the script once to verify and fulfill the user's immediate request:
 
@@ -106,7 +108,7 @@ After this, all future token access must come from the secrets manager via Secre
 ## Rules
 
 - **NEVER run `tapauth.sh --token` directly.** Do not use it in `$(...)`, do not capture its output, do not pipe it to curl. The secrets manager runs it for you.
-- **NEVER skip the approval step.** Always create the grant first (step 1), get user approval, then configure the provider (step 2).
+- **NEVER wait for a "done" reply before configuring OpenClaw.** Always create the grant first (step 1), show the URL, configure the provider, then let `openclaw secrets reload` poll while the user approves.
 - **No TapAuth API key needed.** TapAuth is zero-config. Do not look for TapAuth API keys, client secrets, or environment variables.
 - **Manual secrets are browser-encrypted before TapAuth receives them.** Validation regexes are checked in-browser as a UX guard; validate the retrieved secret too if format matters.
 - **Manual secret expiry is TapAuth-side only.** Expiry stops TapAuth from returning the value; it does not rotate or revoke the underlying password/API key.
@@ -136,16 +138,16 @@ Multiple scopes: comma-separate in a single string, e.g. `["--token", "google", 
 ## Token Lifecycle
 
 - **Resolution:** Fresh tokens fetched at each gateway startup and `openclaw secrets reload`.
-- **Caching:** `tapauth.sh` caches tokens locally with expiry. Subsequent calls return instantly if valid.
-- **Refresh:** Expired tokens are refreshed automatically from the TapAuth API. No user interaction needed.
-- **Re-approval:** If a grant is revoked, delete `~/.tapauth/<provider>-<scopes>.env` and re-run `scripts/tapauth.sh` to create a new grant.
+- **Caching:** `tapauth.sh` caches grant credentials locally. Bearer tokens and approved secrets are fetched on demand and are not written to disk.
+- **Refresh:** Each `--token` call fetches a fresh value from the TapAuth API. TapAuth handles OAuth refresh server-side.
+- **Re-approval:** If a grant is revoked or expired, re-run `scripts/tapauth.sh <provider> <scopes>` to create or re-show an approval URL.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `token refresh failed` | Grant revoked or expired | Delete `~/.tapauth/<provider>-<scopes>.env`, re-run `scripts/tapauth.sh` |
+| `tapauth: cached grant is no longer usable` | Grant revoked, denied, link-expired, or deleted | Re-run `tapauth.sh <provider> <scopes>` to create a new approval URL, then retry OpenClaw |
 | Token works locally but not in OpenClaw | `passEnv` missing `HOME` | Add `HOME` to `passEnv` array |
 | `command must be absolute path` | Relative path in `command` | Resolve `scripts/tapauth.sh` to its absolute path |
 | Symlink error | Skill installed via symlink | Add `allowSymlinkCommand: true` and `trustedDirs` to provider config |
-| `tapauth: timed out` | Grant not pre-approved | Run `scripts/tapauth.sh <provider> <scopes>` without `--token` first |
+| `tapauth: timed out` | User did not approve within 10 minutes | Re-run `scripts/tapauth.sh <provider> <scopes>` to re-show the URL, then retry OpenClaw |

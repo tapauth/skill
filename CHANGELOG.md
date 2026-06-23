@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.6] - 2026-06-23
+
+- Fix: support the documented `tapauth.sh --token <provider> <scopes>` mode and keep polling out of URL mode
+- Fix: persist grant metadata immediately after grant creation so an interrupted approval wait can be recovered locally
+- Docs: update OpenClaw setup guidance so agents configure/reload secrets immediately instead of waiting for the user to say "done"
+
 ## [1.0.5] - 2026-06-03
 
 - Fix: align the bundled `scripts/tapauth.sh` with the canonical TapAuth CLI served from `https://tapauth.ai/cli/tapauth`

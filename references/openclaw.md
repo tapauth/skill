@@ -4,8 +4,8 @@ TapAuth works with [OpenClaw's exec secrets provider](https://docs.openclaw.ai/g
 
 ## How It Works
 
-1. **One-time setup:** Run `tapauth.sh <provider> <scopes>` to create a grant and approve it in the browser. The approved grant ID + grant secret are saved in the script cache directory.
-2. **Configure OpenClaw:** Add one exec provider per grant with `jsonOnly: false`. OpenClaw must use the same cache directory you used during setup, so forward `TAPAUTH_HOME` or `CLAUDE_PLUGIN_DATA` into the exec provider environment. OpenClaw then runs `tapauth.sh --token <provider> <scopes>` and reads the token from stdout.
+1. **One-time setup:** Run `tapauth.sh <provider> <scopes>` to create a grant and show the approval URL. The grant ID + grant secret are saved immediately in the script cache directory.
+2. **Configure OpenClaw immediately:** Add one exec provider per grant with `jsonOnly: false`. Do not wait for the user to say "done." OpenClaw must use the same cache directory you used during setup, so forward `TAPAUTH_HOME` or `CLAUDE_PLUGIN_DATA` into the exec provider environment. OpenClaw then runs `tapauth.sh --token <provider> <scopes>` and waits while the user approves.
 3. **Runtime:** OpenClaw resolves tokens at startup into an in-memory snapshot. `tapauth.sh --token` uses the cached grant to fetch a fresh token from the TapAuth API when OpenClaw starts.
 
 ## Prerequisites
@@ -20,11 +20,13 @@ TapAuth works with [OpenClaw's exec secrets provider](https://docs.openclaw.ai/g
 ```bash
 export TAPAUTH_HOME="$HOME/.tapauth"
 
-# Each command creates a grant, prints an approval URL, and exits immediately
+# Each command creates a grant, prints an approval URL, saves the grant metadata, and exits immediately
 scripts/tapauth.sh github repo
 scripts/tapauth.sh google calendar.readonly
 scripts/tapauth.sh slack channels:read,channels:history
 ```
+
+After showing the URL to the user, configure the provider and run `openclaw secrets reload` right away. The reload command polls through `tapauth.sh --token` until approval completes.
 
 > **Note:** All providers require explicit scopes. Run `tapauth.sh <provider> help` or check the API error response for valid scope names.
 
@@ -67,17 +69,10 @@ Add to `~/.openclaw/openclaw.json`:
 
 ### 3. Reference tokens in config
 
-Use SecretRefs wherever OpenClaw accepts them:
+Use SecretRefs wherever the active OpenClaw schema accepts secret-bearing values. The shape is always:
 
-```json5
-{
-  // Example: GitHub token for gh CLI
-  tools: {
-    github: {
-      token: { source: "exec", provider: "tapauth_github", id: "value" },
-    },
-  },
-}
+```json
+{ "source": "exec", "provider": "tapauth_github", "id": "value" }
 ```
 
 The `id` is always `"value"` since each provider returns a single token on stdout.
@@ -85,10 +80,10 @@ The `id` is always `"value"` since each provider returns a single token on stdou
 ## Token Lifecycle
 
 - **Resolution:** Fresh tokens fetched at each OpenClaw activation (startup + reload).
-- **Caching:** `tapauth.sh` caches approved grant credentials locally. Bearer tokens are fetched on demand and are not written to disk.
+- **Caching:** `tapauth.sh` caches grant credentials locally as soon as a grant is created. Bearer tokens are fetched on demand and are not written to disk.
 - **Refresh:** Each `--token` call fetches a fresh token from the TapAuth API. TapAuth handles OAuth refresh server-side.
 - **Re-approval:** If a grant is revoked or expired, rerun `tapauth.sh <provider> <scopes>` to create a new approval URL.
-- **Manual reload:** `openclaw secrets reload` forces re-resolution without restart.
+- **Manual reload:** `openclaw secrets reload` forces re-resolution of referenced secrets without restart.
 
 ## Troubleshooting
 

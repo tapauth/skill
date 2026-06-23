@@ -9,8 +9,8 @@ set -euo pipefail
 #
 # Usage:
 #   bash scripts/publish-clawhub.sh [--dry-run]
-#   bash scripts/publish-clawhub.sh --version 1.0.5
-#   bash scripts/publish-clawhub.sh --version 1.0.5 --changelog "Canonical CLI sync"
+#   bash scripts/publish-clawhub.sh --version 1.0.6
+#   bash scripts/publish-clawhub.sh --version 1.0.6 --changelog "Grant polling and OpenClaw reload guidance"
 ###############################################################################
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
