@@ -67,6 +67,9 @@ jobs:
             fi
           done
 
+      - name: Verify tapauth.sh matches canonical CLI
+        run: scripts/check-tapauth-cli.sh
+
       - name: Validate skill with npx skills (optional)
         continue-on-error: true
         run: |

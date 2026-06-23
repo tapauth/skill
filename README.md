@@ -46,9 +46,12 @@ No TapAuth API key needed. No signup needed. The user's approval is the gate.
 ### CLI (recommended)
 
 ```bash
-# One command. Token comes back ready to use.
-TOKEN=$(tapauth github repo)
-curl -H "Authorization: Bearer $TOKEN" https://api.github.com/user/repos
+# 1. Create the grant and show the approval URL.
+scripts/tapauth.sh github repo
+
+# 2. Start the real request immediately; --token waits until approval completes.
+curl -H "Authorization: Bearer $(scripts/tapauth.sh --token github repo)" \
+  https://api.github.com/user/repos
 ```
 
 ### API (v1)

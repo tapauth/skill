@@ -34,7 +34,7 @@ This creates a grant and prints the approval URL to stdout:
 ```
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to get the bearer token.
+Show this URL to the user, then start --token immediately; it waits until approval completes.
 ```
 
 **Show the URL to the user.** They must click it, sign in, and approve. This command exits immediately — it does not block or poll.
@@ -162,7 +162,7 @@ Example default-mode output:
 ```
 Approve access: https://tapauth.ai/approve/abc123
 
-Show this URL to the user. Once they approve, run with --token to retrieve the value.
+Show this URL to the user, then start --token immediately; it waits until approval completes.
 ```
 
 Example `--token` mode (polling):
